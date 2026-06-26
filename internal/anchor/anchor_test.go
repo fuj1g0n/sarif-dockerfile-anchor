@@ -74,11 +74,11 @@ func testConfig(df *dockerfile.Dockerfile) Config {
 func TestEnrichBuckets(t *testing.T) {
 	df := dockerfile.Parse(dockerfileSrc)
 	doc := newDoc(
-		newResult("CVE-INJ", "curl", "Low"),         // injected (any severity)
-		newResult("CVE-BASE", "libssl3", "High"),     // base, kept
-		newResult("CVE-BASELOW", "zlib1g", "Low"),    // base, filtered out -> left
+		newResult("CVE-INJ", "curl", "Low"),             // injected (any severity)
+		newResult("CVE-BASE", "libssl3", "High"),        // base, kept
+		newResult("CVE-BASELOW", "zlib1g", "Low"),       // base, filtered out -> left
 		newResult("CVE-APP", "spring-core", "Critical"), // application -> left
-		newResult("CVE-NOPKG", "", "High"),           // unparseable package -> left
+		newResult("CVE-NOPKG", "", "High"),              // unparseable package -> left
 	)
 
 	res := Enrich(doc, testIndex(), df, testConfig(df))

@@ -1,6 +1,9 @@
 {
-  "$schema":  "https://raw.githubusercontent.com/jetify-com/devbox/0.16.0/.schema/devbox.schema.json",
-  "packages": ["go@latest"],
+  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.16.0/.schema/devbox.schema.json",
+  "packages": [
+    "go@latest",
+    "golangci-lint@latest"
+  ],
   "shell": {
     "init_hook": [
       "echo 'Welcome to devbox!' > /dev/null"
@@ -14,6 +17,21 @@
       ],
       "vet": [
         "go vet ./..."
+      ],
+      "lint": [
+        "golangci-lint run ./..."
+      ],
+      "fmt": [
+        "golangci-lint fmt ./..."
+      ],
+      "cover": [
+        "go test ./... -covermode=atomic -coverprofile=coverage.out",
+        "go tool cover -func=coverage.out | tail -1"
+      ],
+      "cover-html": [
+        "go test ./... -covermode=atomic -coverprofile=coverage.out",
+        "go tool cover -html=coverage.out -o coverage.html",
+        "echo wrote coverage.html"
       ]
     }
   }

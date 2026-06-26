@@ -121,8 +121,10 @@ func run(args []string) int {
 		return 1
 	}
 	if *outputPath == "" || *outputPath == "-" {
-		os.Stdout.Write(out)
-		fmt.Fprintln(os.Stdout)
+		if _, werr := os.Stdout.Write(append(out, '\n')); werr != nil {
+			fmt.Fprintf(os.Stderr, "error: write output: %v\n", werr)
+			return 1
+		}
 	} else if werr := os.WriteFile(*outputPath, out, 0o644); werr != nil {
 		fmt.Fprintf(os.Stderr, "error: write output: %v\n", werr)
 		return 1
