@@ -1,8 +1,9 @@
 // Package cyclonedx provides a minimal reader for CycloneDX SBOM JSON that
 // indexes component names by the ecosystem type encoded in their package URL
 // (purl). It is intentionally tolerant: only the fields needed to classify a
-// finding as an OS package (pkg:deb/apk/rpm) versus an application/language
-// package are parsed.
+// finding as an operating-system (Linux distribution) package versus an
+// application/language package are parsed. See OSPackageTypes for the purl
+// types treated as OS packages.
 package cyclonedx
 
 import (
@@ -38,6 +39,32 @@ func (i *Index) Has(name, ecosystem string) bool {
 	}
 	_, ok = set[ecosystem]
 	return ok
+}
+
+// OSPackageTypes is the set of purl "type" values that denote operating-system
+// (Linux distribution / system) packages, per the Package URL type definitions
+// (https://github.com/package-url/purl-spec/tree/main/types). Findings whose
+// SBOM component carries one of these types are eligible for remapping to the
+// Dockerfile; every other type (maven, npm, pypi, golang, nuget, conda, conan,
+// generic, ...) is an application/language package left at the image reference.
+var OSPackageTypes = map[string]struct{}{
+	"deb":   {}, // Debian, Debian derivatives, Ubuntu
+	"rpm":   {}, // RHEL, Fedora, SUSE, and other RPM distros
+	"apk":   {}, // Alpine Linux
+	"alpm":  {}, // Arch Linux (libalpm/pacman)
+	"qpkg":  {}, // QNX
+	"yocto": {}, // Yocto Project (embedded Linux)
+}
+
+// IsOS reports whether name was seen under any OS/distro purl type
+// (see OSPackageTypes).
+func (i *Index) IsOS(name string) bool {
+	for t := range i.eco[name] {
+		if _, ok := OSPackageTypes[t]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 type sbomDoc struct {

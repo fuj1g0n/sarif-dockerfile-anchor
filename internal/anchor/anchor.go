@@ -103,9 +103,9 @@ func anchorOne(item any, eco *cyclonedx.Index, df *dockerfile.Dockerfile, cfg Co
 		severity = strings.ToUpper(sm[1])
 	}
 
-	// Application/language packages (non-deb) stay at the image location; they
+	// Application/language packages (non-OS) stay at the image location; they
 	// are Dependabot/CodeQL territory.
-	if !eco.Has(name, "deb") {
+	if !eco.IsOS(name) {
 		return "left"
 	}
 

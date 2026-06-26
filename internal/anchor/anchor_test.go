@@ -146,3 +146,28 @@ func TestParseSeverities(t *testing.T) {
 		t.Errorf("ParseSeverities = %v, want {HIGH,CRITICAL}", s)
 	}
 }
+
+func TestEnrichTreatsAllOSTypesAsOS(t *testing.T) {
+	df := dockerfile.Parse(dockerfileSrc)
+	eco := cyclonedx.NewIndex(map[string]map[string]struct{}{
+		"openssl-libs": {"rpm": {}},  // RPM base package
+		"musl":         {"apk": {}},  // Alpine base package
+		"glibc":        {"alpm": {}}, // Arch base package
+		"spring-core":  {"maven": {}},
+	})
+	doc := newDoc(
+		newResult("CVE-RPM", "openssl-libs", "High"),
+		newResult("CVE-APK", "musl", "Critical"),
+		newResult("CVE-ALPM", "glibc", "High"),
+		newResult("CVE-APP", "spring-core", "Critical"),
+	)
+	res := Enrich(doc, eco, df, testConfig(df))
+	// rpm/apk/alpm are OS packages not present in the Dockerfile -> base FROM.
+	if res.Base != 3 {
+		t.Errorf("rpm/apk/alpm should anchor to base FROM, got base=%d", res.Base)
+	}
+	// maven stays at the image reference.
+	if res.Left != 1 {
+		t.Errorf("maven should be left at image, got left=%d", res.Left)
+	}
+}

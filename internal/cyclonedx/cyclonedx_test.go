@@ -46,3 +46,29 @@ func TestNilIndexHasIsFalse(t *testing.T) {
 		t.Error("empty index must report false")
 	}
 }
+
+func TestIsOSAcrossPurlTypes(t *testing.T) {
+	idx := NewIndex(map[string]map[string]struct{}{
+		"curl":         {"deb": {}},
+		"openssl-libs": {"rpm": {}},
+		"musl":         {"apk": {}},
+		"glibc":        {"alpm": {}},
+		"qnx-base":     {"qpkg": {}},
+		"yocto-core":   {"yocto": {}},
+		"spring-core":  {"maven": {}},
+		"left-pad":     {"npm": {}},
+		"numpy":        {"conda": {}},
+		"boost":        {"conan": {}},
+		"blob":         {"generic": {}},
+	})
+	for _, name := range []string{"curl", "openssl-libs", "musl", "glibc", "qnx-base", "yocto-core"} {
+		if !idx.IsOS(name) {
+			t.Errorf("%s should be classified as an OS package", name)
+		}
+	}
+	for _, name := range []string{"spring-core", "left-pad", "numpy", "boost", "blob", "unknown"} {
+		if idx.IsOS(name) {
+			t.Errorf("%s must not be classified as an OS package", name)
+		}
+	}
+}

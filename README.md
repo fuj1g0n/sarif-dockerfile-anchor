@@ -25,9 +25,13 @@ introduced the package.
 |---|---|---|
 | **Injected** OS package | name appears in the Dockerfile as a `<name>_…deb` filename or `<name>=` apt pin | the install/download line (any severity) |
 | **Base-image** OS package | OS package not present in the Dockerfile | the final-stage `FROM` line (kept only for `--base-severity`) |
-| **Application / language** package | SBOM `purl` is not `pkg:deb/…` (e.g. `pkg:maven/…`) | left at the image reference (Dependabot / CodeQL territory) |
+| **Application / language** package | SBOM `purl` type is not an OS/distro type (e.g. `pkg:maven/…`, `pkg:npm/…`) | left at the image reference (Dependabot / CodeQL territory) |
 
-- OS vs application is read from the CycloneDX SBOM `purl` ecosystem.
+- OS vs application is decided from the CycloneDX SBOM `purl` **type**: the
+  distro/system types `deb`, `rpm`, `apk`, `alpm`, `qpkg`, `yocto`
+  ([purl spec](https://github.com/package-url/purl-spec/tree/main/types)) are
+  treated as OS packages; everything else (`maven`, `npm`, `pypi`, `golang`,
+  `nuget`, `conda`, `conan`, `generic`, …) is application/language.
 - Base-image findings anchor to the Dockerfile's **final-stage `FROM`** (the last
   `FROM`), since the scanned image is always built from that stage — no base
   image needs to be supplied.
