@@ -14,14 +14,12 @@ import (
 	"strings"
 
 	"github.com/alecthomas/kong"
+	versioninfo "github.com/earthboundkid/versioninfo/v2"
 
 	"github.com/fuj1g0n/sarif-dockerfile-anchor/internal/anchor"
 	"github.com/fuj1g0n/sarif-dockerfile-anchor/internal/cyclonedx"
 	"github.com/fuj1g0n/sarif-dockerfile-anchor/internal/dockerfile"
 )
-
-// version is overridden at build time via -ldflags "-X main.version=...".
-var version = "dev"
 
 // cli is the kong command-line grammar. Each exported field is a flag; the
 // flag name is derived from the field name (kebab-case) unless overridden.
@@ -54,7 +52,7 @@ func run(args []string) int {
 		return 2
 	}
 	if c.Version {
-		fmt.Println(version)
+		fmt.Println(versioninfo.Short())
 		return 0
 	}
 
