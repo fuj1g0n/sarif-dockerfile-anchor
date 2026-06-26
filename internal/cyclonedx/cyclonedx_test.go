@@ -41,6 +41,24 @@ func TestParseInvalidJSON(t *testing.T) {
 	}
 }
 
+func TestParseNestedComponents(t *testing.T) {
+	data := []byte(`{"components":[
+	  {"name":"outer","purl":"pkg:maven/g/outer@1","components":[
+	    {"name":"libssl3","purl":"pkg:deb/ubuntu/libssl3@3.0.2"}
+	  ]}
+	]}`)
+	idx, err := Parse(data)
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if !idx.IsOS("libssl3") {
+		t.Error("nested deb component should be indexed as an OS package")
+	}
+	if !idx.Has("outer", "maven") {
+		t.Error("top-level maven component should still be indexed")
+	}
+}
+
 func TestNilIndexHasIsFalse(t *testing.T) {
 	if NewIndex(nil).Has("x", "deb") {
 		t.Error("empty index must report false")

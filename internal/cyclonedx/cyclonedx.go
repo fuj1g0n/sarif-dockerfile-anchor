@@ -8,13 +8,10 @@ package cyclonedx
 
 import (
 	"encoding/json"
-	"regexp"
 	"strings"
-)
 
-// rePurl extracts the type segment of a purl, e.g. "deb" from
-// "pkg:deb/ubuntu/curl@7.81.0-1?arch=amd64".
-var rePurl = regexp.MustCompile(`^pkg:([^/]+)/`)
+	packageurl "github.com/package-url/packageurl-go"
+)
 
 // Index maps a component name to the set of purl ecosystem types it was seen
 // under (for example "deb", "maven", "golang").
@@ -67,32 +64,42 @@ func (i *Index) IsOS(name string) bool {
 	return false
 }
 
+type sbomComponent struct {
+	Name       string          `json:"name"`
+	Purl       string          `json:"purl"`
+	Components []sbomComponent `json:"components"`
+}
+
 type sbomDoc struct {
-	Components []struct {
-		Name string `json:"name"`
-		Purl string `json:"purl"`
-	} `json:"components"`
+	Components []sbomComponent `json:"components"`
 }
 
 // Parse reads a CycloneDX SBOM (JSON) and returns the name->ecosystem index.
+// Package URLs are parsed with the canonical purl parser, and nested
+// components are walked recursively. Decoding only the name/purl shape keeps
+// the reader agnostic to the CycloneDX spec version.
 func Parse(data []byte) (*Index, error) {
 	var d sbomDoc
 	if err := json.Unmarshal(data, &d); err != nil {
 		return nil, err
 	}
 	m := map[string]map[string]struct{}{}
-	for _, c := range d.Components {
-		match := rePurl.FindStringSubmatch(c.Purl)
-		if match == nil || c.Name == "" {
-			continue
+	var walk func(comps []sbomComponent)
+	walk = func(comps []sbomComponent) {
+		for _, c := range comps {
+			if c.Name != "" && c.Purl != "" {
+				if pu, err := packageurl.FromString(c.Purl); err == nil && pu.Type != "" {
+					set, ok := m[c.Name]
+					if !ok {
+						set = map[string]struct{}{}
+						m[c.Name] = set
+					}
+					set[strings.ToLower(pu.Type)] = struct{}{}
+				}
+			}
+			walk(c.Components)
 		}
-		ecosystem := strings.ToLower(match[1])
-		set, ok := m[c.Name]
-		if !ok {
-			set = map[string]struct{}{}
-			m[c.Name] = set
-		}
-		set[ecosystem] = struct{}{}
 	}
+	walk(d.Components)
 	return NewIndex(m), nil
 }
