@@ -11,12 +11,17 @@ permissions:
 jobs:
   build-test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # "1.24" enforces the go.mod floor (proves the minimum is honest);
+        # "stable" tracks the latest toolchain used for releases.
+        go: ["1.24", "stable"]
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
-          go-version: stable
+          go-version: ${{ matrix.go }}
           cache: true
 
       - name: Vet

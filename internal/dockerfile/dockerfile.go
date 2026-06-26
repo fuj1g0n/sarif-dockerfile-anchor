@@ -1,7 +1,7 @@
 // Package dockerfile parses a Dockerfile into lines and answers the two
 // location questions the anchoring logic needs:
 //
-//   - which FROM line introduces the scanned image's base image, and
+//   - which FROM line is the final build stage (the scanned image's base), and
 //   - which line installs/downloads a given OS package.
 package dockerfile
 
@@ -10,10 +10,7 @@ import (
 	"strings"
 )
 
-var (
-	reFrom      = regexp.MustCompile(`(?i)^FROM\s`)
-	reAsRuntime = regexp.MustCompile(`(?i)\bAS\s+runtime\b`)
-)
+var reFrom = regexp.MustCompile(`(?i)^FROM\s`)
 
 // Dockerfile holds the raw lines of a Dockerfile plus a small regexp cache.
 type Dockerfile struct {
@@ -36,35 +33,21 @@ func Parse(content string) *Dockerfile {
 	return &Dockerfile{Lines: lines, cache: map[string]*regexp.Regexp{}}
 }
 
-// FindBaseFromLine returns the 1-based line of the FROM that introduces
-// baseImage. Preference order: an exact image match -> the "AS runtime" stage
-// -> the last FROM -> line 1.
-func (d *Dockerfile) FindBaseFromLine(baseImage string) int {
-	matched, runtime, last := 0, 0, 0
+// FinalStageFromLine returns the 1-based line of the last FROM instruction --
+// the final build stage, whose base image the built image is based on. (Docker
+// builds the last stage by default, so its FROM is the scanned image's base.)
+// Falls back to line 1 when the Dockerfile has no FROM.
+func (d *Dockerfile) FinalStageFromLine() int {
+	last := 0
 	for i, raw := range d.Lines {
-		s := strings.TrimSpace(raw)
-		if !reFrom.MatchString(s) {
-			continue
-		}
-		last = i + 1
-		fields := strings.Fields(s)
-		if baseImage != "" && len(fields) >= 2 && fields[1] == baseImage {
-			matched = i + 1
-		}
-		if reAsRuntime.MatchString(s) {
-			runtime = i + 1
+		if reFrom.MatchString(strings.TrimSpace(raw)) {
+			last = i + 1
 		}
 	}
-	switch {
-	case matched != 0:
-		return matched
-	case runtime != 0:
-		return runtime
-	case last != 0:
+	if last != 0 {
 		return last
-	default:
-		return 1
 	}
+	return 1
 }
 
 // InstallLine returns the 1-based Dockerfile line that installs/downloads the

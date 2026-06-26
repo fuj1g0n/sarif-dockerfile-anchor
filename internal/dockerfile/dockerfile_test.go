@@ -8,25 +8,24 @@ FROM eclipse-temurin:21-jre-jammy AS runtime
 RUN dpkg -i curl_7.81.0-1_amd64.deb libcurl4_7.81.0-1_amd64.deb
 RUN apt-get install -y git=1:2.34.1-1ubuntu1`
 
-func TestFindBaseFromLineExactMatch(t *testing.T) {
+func TestFinalStageFromLine(t *testing.T) {
 	df := Parse(sample)
-	if got := df.FindBaseFromLine("eclipse-temurin:21-jre-jammy"); got != 3 {
-		t.Errorf("FindBaseFromLine exact = %d, want 3", got)
+	if got := df.FinalStageFromLine(); got != 3 {
+		t.Errorf("FinalStageFromLine = %d, want 3", got)
 	}
 }
 
-func TestFindBaseFromLineFallbackToRuntimeStage(t *testing.T) {
-	df := Parse(sample)
-	// Unknown ref -> falls back to the "AS runtime" stage (line 3).
-	if got := df.FindBaseFromLine("does-not-exist:latest"); got != 3 {
-		t.Errorf("FindBaseFromLine fallback = %d, want 3", got)
-	}
-}
-
-func TestFindBaseFromLineFallbackToLastFrom(t *testing.T) {
+func TestFinalStageFromLineLastOfMany(t *testing.T) {
 	df := Parse("FROM a:1\nFROM b:2\nRUN echo hi")
-	if got := df.FindBaseFromLine("nope"); got != 2 {
-		t.Errorf("FindBaseFromLine last-FROM = %d, want 2", got)
+	if got := df.FinalStageFromLine(); got != 2 {
+		t.Errorf("FinalStageFromLine last-of-many = %d, want 2", got)
+	}
+}
+
+func TestFinalStageFromLineNoFrom(t *testing.T) {
+	df := Parse("RUN echo hi\nRUN echo bye")
+	if got := df.FinalStageFromLine(); got != 1 {
+		t.Errorf("FinalStageFromLine no-FROM = %d, want 1", got)
 	}
 }
 

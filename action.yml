@@ -19,9 +19,6 @@ inputs:
     description: "Path to the Dockerfile to anchor findings to."
     required: true
     default: "Dockerfile"
-  base-image:
-    description: "Base image reference of the scanned image (used to locate the FROM line)."
-    required: true
   base-severity:
     description: "Comma-separated severities of base-image OS findings kept as inline annotations."
     required: false
@@ -100,7 +97,6 @@ runs:
           --sarif         "${{ inputs.sarif }}"
           --sbom          "${{ inputs.sbom }}"
           --dockerfile    "${{ inputs.dockerfile }}"
-          --base-image    "${{ inputs.base-image }}"
           --base-severity "${{ inputs.base-severity }}"
           --output        "${{ inputs.output }}"
         )

@@ -114,8 +114,8 @@ func anchorOne(item any, eco *cyclonedx.Index, df *dockerfile.Dockerfile, cfg Co
 	if ln, found := df.InstallLine(name); found {
 		lineNo, bucket = ln, "injected"
 	} else {
-		// Base-image OS package: anchor to the runtime FROM line, but keep only
-		// the configured severities as inline annotations to limit noise.
+		// Base-image OS package: anchor to the final-stage FROM line, but keep
+		// only the configured severities as inline annotations to limit noise.
 		if len(cfg.BaseSeverities) > 0 && !cfg.BaseSeverities[severity] {
 			return "left"
 		}

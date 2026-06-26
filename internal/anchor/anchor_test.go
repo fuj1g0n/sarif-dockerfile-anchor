@@ -66,7 +66,7 @@ func testIndex() *cyclonedx.Index {
 func testConfig(df *dockerfile.Dockerfile) Config {
 	return Config{
 		DockerfileURI:  "Dockerfile",
-		BaseFromLine:   df.FindBaseFromLine("eclipse-temurin:21-jre-jammy"),
+		BaseFromLine:   df.FinalStageFromLine(),
 		BaseSeverities: ParseSeverities("high,critical"),
 	}
 }

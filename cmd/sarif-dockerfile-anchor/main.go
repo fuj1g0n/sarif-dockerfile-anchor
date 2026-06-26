@@ -33,7 +33,6 @@ func run(args []string) int {
 		sarifPath   = fs.String("sarif", "", "path to the Defender CLI image-scan SARIF (required)")
 		sbomPath    = fs.String("sbom", "", "path to the CycloneDX SBOM JSON (required)")
 		dfPath      = fs.String("dockerfile", "", "path to the Dockerfile to anchor findings to (required)")
-		baseImage   = fs.String("base-image", "", "base image reference of the scanned image (required)")
 		baseSevCSV  = fs.String("base-severity", "high,critical", "comma-separated severities of base-image OS findings kept inline")
 		dfURI       = fs.String("dockerfile-uri", "", "repo-relative URI written into the SARIF artifactLocation (default: value of --dockerfile)")
 		outputPath  = fs.String("output", "", "write the enriched SARIF here (default: stdout)")
@@ -42,7 +41,7 @@ func run(args []string) int {
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, "sarif-dockerfile-anchor %s\n\n", version)
 		fmt.Fprintf(os.Stderr, "Anchor Microsoft Defender container-image SARIF findings to Dockerfile lines.\n\n")
-		fmt.Fprintf(os.Stderr, "Usage:\n  sarif-dockerfile-anchor --sarif <f> --sbom <f> --dockerfile <f> --base-image <ref> [flags]\n\n")
+		fmt.Fprintf(os.Stderr, "Usage:\n  sarif-dockerfile-anchor --sarif <f> --sbom <f> --dockerfile <f> [flags]\n\n")
 		fmt.Fprintf(os.Stderr, "Flags:\n")
 		fs.PrintDefaults()
 	}
@@ -60,7 +59,6 @@ func run(args []string) int {
 		"--sarif":      *sarifPath,
 		"--sbom":       *sbomPath,
 		"--dockerfile": *dfPath,
-		"--base-image": *baseImage,
 	} {
 		if val == "" {
 			missing = append(missing, flagName)
@@ -111,7 +109,7 @@ func run(args []string) int {
 
 	cfg := anchor.Config{
 		DockerfileURI:  uri,
-		BaseFromLine:   df.FindBaseFromLine(*baseImage),
+		BaseFromLine:   df.FinalStageFromLine(),
 		BaseSeverities: anchor.ParseSeverities(*baseSevCSV),
 	}
 
