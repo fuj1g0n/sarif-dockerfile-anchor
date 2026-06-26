@@ -1,0 +1,48 @@
+version: 2
+
+project_name: sarif-dockerfile-anchor
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: sarif-dockerfile-anchor
+    main: ./cmd/sarif-dockerfile-anchor
+    binary: sarif-dockerfile-anchor
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+archives:
+  - id: default
+    # Asset name the composite action.yml predicts:
+    #   sarif-dockerfile-anchor_<version>_<os>_<arch>.<ext>
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  draft: false
+  prerelease: auto

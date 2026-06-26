@@ -1,0 +1,148 @@
+package anchor
+
+import (
+	"testing"
+
+	"github.com/fuj1g0n/sarif-dockerfile-anchor/internal/cyclonedx"
+	"github.com/fuj1g0n/sarif-dockerfile-anchor/internal/dockerfile"
+)
+
+const dockerfileSrc = `FROM eclipse-temurin:21-jdk AS build
+RUN ./gradlew bootJar
+FROM eclipse-temurin:21-jre-jammy AS runtime
+RUN dpkg -i curl_7.81.0-1_amd64.deb`
+
+func newResult(rule, pkg, sev string) map[string]any {
+	return map[string]any{
+		"ruleId": rule,
+		"message": map[string]any{
+			"text": "Package: " + pkg + ", Severity: " + sev + ", Fix: none",
+		},
+		"locations": []any{
+			map[string]any{
+				"physicalLocation": map[string]any{
+					"artifactLocation": map[string]any{"uri": "registry/quiz-app"},
+					"region":           map[string]any{"startLine": float64(1)},
+				},
+			},
+		},
+	}
+}
+
+func newDoc(results ...map[string]any) map[string]any {
+	items := make([]any, len(results))
+	for i, r := range results {
+		items[i] = r
+	}
+	return map[string]any{
+		"version": "2.1.0",
+		"runs": []any{
+			map[string]any{"results": items},
+		},
+	}
+}
+
+func resultsOf(doc map[string]any) []any {
+	return doc["runs"].([]any)[0].(map[string]any)["results"].([]any)
+}
+
+func region(r map[string]any) map[string]any {
+	return r["locations"].([]any)[0].(map[string]any)["physicalLocation"].(map[string]any)["region"].(map[string]any)
+}
+
+func uri(r map[string]any) string {
+	return r["locations"].([]any)[0].(map[string]any)["physicalLocation"].(map[string]any)["artifactLocation"].(map[string]any)["uri"].(string)
+}
+
+func testIndex() *cyclonedx.Index {
+	return cyclonedx.NewIndex(map[string]map[string]struct{}{
+		"curl":        {"deb": {}},
+		"libssl3":     {"deb": {}},
+		"zlib1g":      {"deb": {}},
+		"spring-core": {"maven": {}},
+	})
+}
+
+func testConfig(df *dockerfile.Dockerfile) Config {
+	return Config{
+		DockerfileURI:  "Dockerfile",
+		BaseFromLine:   df.FindBaseFromLine("eclipse-temurin:21-jre-jammy"),
+		BaseSeverities: ParseSeverities("high,critical"),
+	}
+}
+
+func TestEnrichBuckets(t *testing.T) {
+	df := dockerfile.Parse(dockerfileSrc)
+	doc := newDoc(
+		newResult("CVE-INJ", "curl", "Low"),         // injected (any severity)
+		newResult("CVE-BASE", "libssl3", "High"),     // base, kept
+		newResult("CVE-BASELOW", "zlib1g", "Low"),    // base, filtered out -> left
+		newResult("CVE-APP", "spring-core", "Critical"), // application -> left
+		newResult("CVE-NOPKG", "", "High"),           // unparseable package -> left
+	)
+
+	res := Enrich(doc, testIndex(), df, testConfig(df))
+
+	if res.Injected != 1 || res.Base != 1 || res.Left != 3 {
+		t.Fatalf("buckets = injected:%d base:%d left:%d, want 1/1/3", res.Injected, res.Base, res.Left)
+	}
+
+	r := resultsOf(doc)
+
+	// Injected curl -> install line (4) on Dockerfile.
+	if got := region(r[0].(map[string]any))["startLine"]; got != 4 {
+		t.Errorf("injected startLine = %v, want 4", got)
+	}
+	if got := uri(r[0].(map[string]any)); got != "Dockerfile" {
+		t.Errorf("injected uri = %q, want Dockerfile", got)
+	}
+
+	// Base libssl3 -> runtime FROM line (3).
+	if got := region(r[1].(map[string]any))["startLine"]; got != 3 {
+		t.Errorf("base startLine = %v, want 3", got)
+	}
+
+	// Stable fingerprint present on an anchored finding.
+	fp := r[0].(map[string]any)["partialFingerprints"].(map[string]any)["primaryLocationLineHash"]
+	if fp == nil || fp == "" {
+		t.Error("expected partialFingerprints on anchored result")
+	}
+}
+
+func TestEnrichPreservesUnknownFields(t *testing.T) {
+	df := dockerfile.Parse(dockerfileSrc)
+	doc := newDoc(newResult("CVE-APP", "spring-core", "High"))
+	// Application finding is left untouched, including its original location.
+	Enrich(doc, testIndex(), df, testConfig(df))
+	if got := uri(resultsOf(doc)[0].(map[string]any)); got != "registry/quiz-app" {
+		t.Errorf("left finding uri = %q, want untouched registry/quiz-app", got)
+	}
+	if doc["version"] != "2.1.0" {
+		t.Error("top-level version field must be preserved")
+	}
+}
+
+func TestEnrichEmptyBaseSeveritiesKeepsAll(t *testing.T) {
+	df := dockerfile.Parse(dockerfileSrc)
+	cfg := testConfig(df)
+	cfg.BaseSeverities = ParseSeverities("") // empty => keep all base findings
+	doc := newDoc(newResult("CVE-BASELOW", "zlib1g", "Low"))
+	res := Enrich(doc, testIndex(), df, cfg)
+	if res.Base != 1 {
+		t.Errorf("empty base-severity should keep base finding, got base=%d", res.Base)
+	}
+}
+
+func TestEndColumnMinimumTwo(t *testing.T) {
+	df := dockerfile.Parse("\nFROM x") // line 1 is empty
+	if got := endColumn(df, 1); got != 2 {
+		t.Errorf("endColumn(empty line) = %d, want 2", got)
+	}
+}
+
+func TestParseSeverities(t *testing.T) {
+	s := ParseSeverities(" high , Critical ,, ")
+	if !s["HIGH"] || !s["CRITICAL"] || len(s) != 2 {
+		t.Errorf("ParseSeverities = %v, want {HIGH,CRITICAL}", s)
+	}
+}

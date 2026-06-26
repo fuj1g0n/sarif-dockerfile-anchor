@@ -1,0 +1,11 @@
+# Build / release artifacts
+/dist/
+/bin/
+*.exe
+*.test
+*.out
+coverage.txt
+coverage.out
+
+# devbox
+.devbox/

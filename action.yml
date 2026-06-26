@@ -1,0 +1,111 @@
+name: "SARIF Dockerfile Anchor"
+description: >-
+  Anchor Microsoft Defender (MDVM) container-image SARIF findings to the
+  Dockerfile lines that introduced the packages, so GitHub code scanning can
+  show them as pull-request inline annotations and diff gates.
+author: "fuj1g0n"
+branding:
+  icon: "crosshair"
+  color: "blue"
+
+inputs:
+  sarif:
+    description: "Path to the Defender CLI image-scan SARIF file."
+    required: true
+  sbom:
+    description: "Path to the CycloneDX SBOM JSON file."
+    required: true
+  dockerfile:
+    description: "Path to the Dockerfile to anchor findings to."
+    required: true
+    default: "Dockerfile"
+  base-image:
+    description: "Base image reference of the scanned image (used to locate the FROM line)."
+    required: true
+  base-severity:
+    description: "Comma-separated severities of base-image OS findings kept as inline annotations."
+    required: false
+    default: "high,critical"
+  dockerfile-uri:
+    description: "Repo-relative URI written into the SARIF artifactLocation (default: value of dockerfile)."
+    required: false
+    default: ""
+  output:
+    description: "Path to write the enriched SARIF (must be a file so it can be uploaded)."
+    required: false
+    default: "enriched.sarif"
+  version:
+    description: "Release tag of the binary to download (e.g. v1.0.0), or 'latest'."
+    required: false
+    default: "latest"
+  github-token:
+    description: "Token used to resolve the latest release and download release assets."
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  sarif:
+    description: "Path to the enriched SARIF file."
+    value: ${{ steps.run.outputs.sarif }}
+
+runs:
+  using: "composite"
+  steps:
+    - id: run
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+        REPO="fuj1g0n/sarif-dockerfile-anchor"
+
+        # --- resolve the release tag ---------------------------------------
+        VERSION="${{ inputs.version }}"
+        if [ "${VERSION}" = "latest" ]; then
+          VERSION="$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" \
+            "https://api.github.com/repos/${REPO}/releases/latest" \
+            | grep -m1 '"tag_name"' | cut -d'"' -f4)"
+        fi
+        if [ -z "${VERSION}" ]; then
+          echo "::error::could not resolve a release version for ${REPO}"; exit 1
+        fi
+        NUM="${VERSION#v}"
+
+        # --- map runner OS/arch to GoReleaser asset names ------------------
+        case "${RUNNER_OS}" in
+          Linux)   OS=linux ;;
+          macOS)   OS=darwin ;;
+          Windows) OS=windows ;;
+          *) echo "::error::unsupported RUNNER_OS=${RUNNER_OS}"; exit 1 ;;
+        esac
+        case "${RUNNER_ARCH}" in
+          X64)   ARCH=amd64 ;;
+          ARM64) ARCH=arm64 ;;
+          *) echo "::error::unsupported RUNNER_ARCH=${RUNNER_ARCH}"; exit 1 ;;
+        esac
+
+        EXT="tar.gz"; BIN="sarif-dockerfile-anchor"
+        if [ "${OS}" = "windows" ]; then EXT="zip"; BIN="sarif-dockerfile-anchor.exe"; fi
+        ASSET="sarif-dockerfile-anchor_${NUM}_${OS}_${ARCH}.${EXT}"
+        URL="https://github.com/${REPO}/releases/download/${VERSION}/${ASSET}"
+
+        TMP="$(mktemp -d)"
+        echo "Downloading ${URL}"
+        curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" -o "${TMP}/${ASSET}" "${URL}"
+        if [ "${EXT}" = "zip" ]; then unzip -q "${TMP}/${ASSET}" -d "${TMP}";
+        else tar -xzf "${TMP}/${ASSET}" -C "${TMP}"; fi
+
+        # --- run ------------------------------------------------------------
+        ARGS=(
+          --sarif         "${{ inputs.sarif }}"
+          --sbom          "${{ inputs.sbom }}"
+          --dockerfile    "${{ inputs.dockerfile }}"
+          --base-image    "${{ inputs.base-image }}"
+          --base-severity "${{ inputs.base-severity }}"
+          --output        "${{ inputs.output }}"
+        )
+        DFURI="${{ inputs.dockerfile-uri }}"
+        if [ -n "${DFURI}" ]; then ARGS+=(--dockerfile-uri "${DFURI}"); fi
+
+        "${TMP}/${BIN}" "${ARGS[@]}"
+        echo "sarif=${{ inputs.output }}" >> "${GITHUB_OUTPUT}"
