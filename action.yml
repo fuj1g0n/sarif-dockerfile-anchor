@@ -58,14 +58,22 @@ runs:
     # commit and no `version` input is needed.
     - id: resolve
       shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
       run: |
         set -euo pipefail
+        # GITHUB_ACTION_REF is not always populated inside a composite action's
+        # steps (notably when the action lives in the same repo as the calling
+        # workflow). Fall back to the ref segment of the checkout path
+        # (.../_actions/<owner>/<repo>/<ref>) so the mode is decided reliably.
         REF="${GITHUB_ACTION_REF:-}"
+        if [ -z "${REF}" ]; then REF="$(basename "${ACTION_PATH}")"; fi
         if printf '%s' "${REF}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
           MODE=download
         else
           MODE=build
         fi
+        echo "ref=${REF}" >> "${GITHUB_OUTPUT}"
         echo "mode=${MODE}" >> "${GITHUB_OUTPUT}"
         echo "anchor: mode=${MODE} (action ref: ${REF:-local})"
 
@@ -87,7 +95,7 @@ runs:
         set -euo pipefail
         BIN="${RUNNER_TEMP}/sarif-dockerfile-anchor"
         if [ "${RUNNER_OS}" = "Windows" ]; then BIN="${BIN}.exe"; fi
-        echo "Building sarif-dockerfile-anchor from ${{ github.action_path }} (ref ${GITHUB_ACTION_REF:-local})"
+        echo "Building sarif-dockerfile-anchor from ${{ github.action_path }} (ref ${{ steps.resolve.outputs.ref }})"
         ( cd "${{ github.action_path }}" && devbox run -- go build -o "${BIN}" ./cmd/sarif-dockerfile-anchor )
         echo "bin=${BIN}" >> "${GITHUB_OUTPUT}"
 
@@ -100,7 +108,7 @@ runs:
       run: |
         set -euo pipefail
         REPO="fuj1g0n/sarif-dockerfile-anchor"
-        VERSION="${GITHUB_ACTION_REF}"
+        VERSION="${{ steps.resolve.outputs.ref }}"
         NUM="${VERSION#v}"
 
         # --- map runner OS/arch to GoReleaser asset names ---
