@@ -71,12 +71,14 @@ runs:
 
     # --- build path: any non-release-tag ref ----------------------------------
     # Build the binary with the same devbox-pinned Go toolchain that CI uses,
-    # from the action source checked out at this ref.
+    # from the action source checked out at this ref. Caching is disabled: the
+    # action source lives outside GITHUB_WORKSPACE for `uses: owner/repo@ref`,
+    # and the action's hashFiles(devbox.lock) cache key cannot hash files there.
     - if: steps.resolve.outputs.mode == 'build'
       uses: jetify-com/devbox-install-action@v0.15.0
       with:
         project-path: ${{ github.action_path }}
-        enable-cache: "true"
+        enable-cache: "false"
 
     - id: build
       if: steps.resolve.outputs.mode == 'build'
