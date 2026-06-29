@@ -124,10 +124,9 @@ func anchorOne(item any, eco *cyclonedx.Index, df *dockerfile.Dockerfile, cfg Co
 	} else if cfg.LinkTransitive {
 		// Not named on any line: try to attribute the package to the install line
 		// of the nearest package (per the SBOM dependency graph) that pulled it in.
-		if anc, ok := eco.NearestInstalledAncestor(name, func(n string) bool {
-			_, f := df.InstallLine(n)
-			return f
-		}); ok {
+		// When several installed packages pull it in at the same depth, the one
+		// installed earliest in the Dockerfile wins.
+		if anc, ok := eco.NearestInstalledAncestor(name, df.InstallLine); ok {
 			if ln, f := df.InstallLine(anc); f {
 				lineNo, bucket = ln, "transitive"
 			}

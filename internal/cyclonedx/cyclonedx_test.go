@@ -112,12 +112,14 @@ func TestNearestInstalledAncestor(t *testing.T) {
 		t.Fatalf("Parse returned error: %v", err)
 	}
 
-	installed := func(names ...string) func(string) bool {
+	// installed marks each named package as installed on line 1; callers that
+	// exercise the line-order tiebreak use installedAt instead.
+	installed := func(names ...string) func(string) (int, bool) {
 		set := map[string]bool{}
 		for _, n := range names {
 			set[n] = true
 		}
-		return func(n string) bool { return set[n] }
+		return func(n string) (int, bool) { return 1, set[n] }
 	}
 
 	// libssl3t64's only installed ancestor is curl (two hops up).
@@ -138,9 +140,54 @@ func TestNearestInstalledAncestor(t *testing.T) {
 	}
 }
 
+// multiParentSBOM gives libssl3t64 two direct parents (libcurl4t64 and
+// libssh-4) so the same-depth tiebreak can be exercised.
+const multiParentSBOM = `{
+  "components": [
+    {"name":"libcurl4t64","bom-ref":"r-lcurl","purl":"pkg:deb/ubuntu/libcurl4t64@8.5.0?arch=amd64"},
+    {"name":"libssh-4",   "bom-ref":"r-lssh", "purl":"pkg:deb/ubuntu/libssh-4@0.10?arch=amd64"},
+    {"name":"libssl3t64", "bom-ref":"r-ssl",  "purl":"pkg:deb/ubuntu/libssl3t64@3.0.13?arch=amd64"}
+  ],
+  "dependencies": [
+    {"ref":"r-lcurl","dependsOn":["r-ssl"]},
+    {"ref":"r-lssh", "dependsOn":["r-ssl"]}
+  ]
+}`
+
+// TestNearestInstalledAncestorLineOrder verifies that when a transitive package
+// has several installed direct parents, the parent installed earliest in the
+// Dockerfile wins, with name order breaking exact line ties.
+func TestNearestInstalledAncestorLineOrder(t *testing.T) {
+	idx, err := Parse([]byte(multiParentSBOM))
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	installedAt := func(lines map[string]int) func(string) (int, bool) {
+		return func(n string) (int, bool) {
+			ln, ok := lines[n]
+			return ln, ok
+		}
+	}
+
+	// libcurl4t64 is installed earlier (line 5) than libssh-4 (line 7).
+	if anc, ok := idx.NearestInstalledAncestor("libssl3t64", installedAt(map[string]int{"libcurl4t64": 5, "libssh-4": 7})); !ok || anc != "libcurl4t64" {
+		t.Errorf("earliest-line ancestor = %q,%v, want libcurl4t64,true", anc, ok)
+	}
+	// Reversing the install lines flips the winner: line order beats name order
+	// (alphabetically libcurl4t64 < libssh-4, yet libssh-4 wins on line 5).
+	if anc, ok := idx.NearestInstalledAncestor("libssl3t64", installedAt(map[string]int{"libcurl4t64": 7, "libssh-4": 5})); !ok || anc != "libssh-4" {
+		t.Errorf("earliest-line ancestor = %q,%v, want libssh-4,true", anc, ok)
+	}
+	// On an exact line tie, the alphabetically-first name wins deterministically.
+	if anc, ok := idx.NearestInstalledAncestor("libssl3t64", installedAt(map[string]int{"libcurl4t64": 5, "libssh-4": 5})); !ok || anc != "libcurl4t64" {
+		t.Errorf("line-tie ancestor = %q,%v, want libcurl4t64,true", anc, ok)
+	}
+}
+
 func TestNearestInstalledAncestorEmptyGraph(t *testing.T) {
 	idx := NewIndex(map[string]map[string]struct{}{"libssl3t64": {"deb": {}}})
-	if _, ok := idx.NearestInstalledAncestor("libssl3t64", func(string) bool { return true }); ok {
+	if _, ok := idx.NearestInstalledAncestor("libssl3t64", func(string) (int, bool) { return 1, true }); ok {
 		t.Error("index without a dependency graph must report no ancestor")
 	}
 }
