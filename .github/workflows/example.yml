@@ -26,6 +26,14 @@ jobs:
       - name: Build the test image
         run: docker build -f "$DOCKERFILE" -t "$IMAGE" .github/example
 
+      # Export the locally-built image to a docker-archive tar. The Defender
+      # CLI resolver only accepts a local artifact (OCI dir / tar) or a
+      # pullable registry reference; a bare local-daemon tag logs
+      # "pkg/resolver : No suitable resolver found". A tar file resolves
+      # cleanly ("Image resolved") on Docker-based runners.
+      - name: Export image to a tar (deterministic scanner input)
+        run: docker save "$IMAGE" -o image.tar
+
       - name: Download Defender for Cloud CLI
         run: curl -L -o defender "https://aka.ms/defender-cli_linux-x64" && chmod +x defender
 
@@ -35,8 +43,8 @@ jobs:
           DEFENDER_CLIENT_ID: ${{ secrets.DEFENDER_CLIENT_ID }}
           DEFENDER_CLIENT_SECRET: ${{ secrets.DEFENDER_CLIENT_SECRET }}
         run: |
-          ./defender scan image "$IMAGE" --defender-output image.sarif
-          ./defender scan sbom  "$IMAGE" --output sbom.cyclonedx.json
+          ./defender scan image image.tar --scanner mdvm     --defender-output image.sarif
+          ./defender scan sbom  image.tar --scanner mdvmsbom --defender-output sbom.sarif --output sbom.cyclonedx.json
           test -s image.sarif && test -s sbom.cyclonedx.json \
             || { echo "::error::Defender scan produced no SARIF/SBOM — check the DEFENDER_* token secrets are valid and unexpired"; exit 1; }
 
