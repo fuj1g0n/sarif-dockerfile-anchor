@@ -148,32 +148,53 @@ func Parse(data []byte) (*Index, error) {
 }
 
 // NearestInstalledAncestor walks the reverse dependency graph upward from name
-// and returns the closest ancestor package (one that transitively depends on
-// name) for which installed reports true. Ancestors are explored breadth-first
-// so the nearest match wins; ties at the same depth are broken alphabetically
-// for deterministic output. name itself is never returned. It reports false
+// breadth-first and returns the closest installed ancestor (a package that
+// transitively depends on name). When several installed ancestors sit at the
+// same nearest depth, the one whose Dockerfile install line comes first wins
+// (smallest line number); remaining ties are broken alphabetically for
+// deterministic output. installLine reports a package's 1-based install line
+// and whether it is installed. name itself is never returned. It reports false
 // when the graph is empty or no installed ancestor exists.
-func (i *Index) NearestInstalledAncestor(name string, installed func(string) bool) (string, bool) {
+func (i *Index) NearestInstalledAncestor(name string, installLine func(string) (int, bool)) (string, bool) {
 	if name == "" || len(i.parents) == 0 {
 		return "", false
 	}
 	visited := map[string]bool{name: true}
-	queue := sortedKeys(i.parents[name])
-	for _, n := range queue {
+	level := sortedKeys(i.parents[name])
+	for _, n := range level {
 		visited[n] = true
 	}
-	for len(queue) > 0 {
-		cur := queue[0]
-		queue = queue[1:]
-		if installed(cur) {
-			return cur, true
-		}
-		for _, p := range sortedKeys(i.parents[cur]) {
-			if !visited[p] {
-				visited[p] = true
-				queue = append(queue, p)
+	for len(level) > 0 {
+		// Among the installed packages at this depth, prefer the one whose
+		// install line comes first in the Dockerfile; level is sorted
+		// alphabetically so equal line numbers fall back to name order.
+		best := ""
+		bestLine := 0
+		for _, n := range level {
+			ln, ok := installLine(n)
+			if !ok {
+				continue
+			}
+			if best == "" || ln < bestLine {
+				best, bestLine = n, ln
 			}
 		}
+		if best != "" {
+			return best, true
+		}
+		// Descend to the next depth, keeping global alphabetical order so the
+		// tiebreak stays deterministic.
+		var next []string
+		for _, n := range level {
+			for _, p := range sortedKeys(i.parents[n]) {
+				if !visited[p] {
+					visited[p] = true
+					next = append(next, p)
+				}
+			}
+		}
+		sort.Strings(next)
+		level = next
 	}
 	return "", false
 }
