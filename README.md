@@ -158,8 +158,11 @@ defender scan sbom  image.tar --scanner mdvmsbom --defender-output sbom.sarif --
     category: defender-mdvm
 ```
 
-The composite action downloads the matching release binary for the runner's
-OS/architecture; no Python or other runtime is required on the runner.
+When pinned to a release tag (`@vX.Y.Z`) the composite action downloads the
+matching prebuilt binary for the runner's OS/architecture. When pinned to any
+other ref (`@main`, a branch, or a SHA) it builds the binary from the action
+source at that exact commit, using the same devbox-pinned Go toolchain as CI, so
+behaviour is tied to the pinned commit. No Python or other runtime is required.
 
 ## Development
 
