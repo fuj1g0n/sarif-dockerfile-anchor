@@ -1,23 +1,20 @@
-name: example
+name: e2e-test
 
-# Example: scan a deliberately vulnerable image with the Defender for Cloud CLI,
-# anchor its SARIF to the Dockerfile via the action consumed as an external user
-# would (pinned @main, which builds the action from source at that commit), and
-# verify the enriched SARIF. The repo's own end-to-end test lives in
-# e2e-test.yml (uses: ./). Requires repository secrets:
+# End-to-end self-test: build a deliberately vulnerable image, scan it with the
+# Defender for Cloud CLI, anchor its SARIF to the Dockerfile via the in-repo
+# action (uses: ./, built from the source in this checkout), and verify the
+# enriched SARIF. Runs on every pull request so any change is exercised against
+# the action's own code. Requires repository secrets:
 #   DEFENDER_TENANT_ID / DEFENDER_CLIENT_ID / DEFENDER_CLIENT_SECRET
 on:
   pull_request:
-    paths:
-      - ".github/workflows/example.yml"
-      - ".github/example/**"
 
 permissions:
   contents: read
   security-events: write
 
 jobs:
-  example:
+  e2e-test:
     runs-on: ubuntu-latest
     env:
       IMAGE: example-anchor:test
@@ -50,13 +47,13 @@ jobs:
           test -s image.sarif && test -s sbom.cyclonedx.json \
             || { echo "::error::Defender scan produced no SARIF/SBOM — check the DEFENDER_* token secrets are valid and unexpired"; exit 1; }
 
-      # Consume the action as an external user would, pinned to @main. Because
-      # @main is a non-tag ref, the action builds its binary from the action
-      # source at that commit; pin a vX.Y.Z release tag instead to download the
-      # matching prebuilt binary.
-      - name: Anchor MDVM SARIF to Dockerfile (released action @main)
+      # Consume the action from this checkout (uses: ./): GITHUB_ACTION_REF is
+      # empty, so the action builds its binary from the source in this PR and
+      # exercises current behaviour — including transitive dependency anchoring
+      # (link-transitive, default true).
+      - name: Anchor MDVM SARIF to Dockerfile (built from source)
         id: anchor
-        uses: fuj1g0n/sarif-dockerfile-anchor@main
+        uses: ./
         with:
           sarif: image.sarif
           sbom: sbom.cyclonedx.json
@@ -77,4 +74,4 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: ${{ steps.anchor.outputs.sarif }}
-          category: defender-mdvm-example
+          category: defender-mdvm-e2e
