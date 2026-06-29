@@ -1,8 +1,8 @@
 name: example
 
 # Example: scan a deliberately vulnerable image with the Defender for Cloud CLI,
-# anchor its SARIF to the Dockerfile via the *released* action, and verify the
-# enriched SARIF. Requires repository secrets:
+# anchor its SARIF to the Dockerfile via the in-repo action (built from source at
+# this commit), and verify the enriched SARIF. Requires repository secrets:
 #   DEFENDER_TENANT_ID / DEFENDER_CLIENT_ID / DEFENDER_CLIENT_SECRET
 on:
   pull_request:
@@ -48,19 +48,19 @@ jobs:
           test -s image.sarif && test -s sbom.cyclonedx.json \
             || { echo "::error::Defender scan produced no SARIF/SBOM — check the DEFENDER_* token secrets are valid and unexpired"; exit 1; }
 
-      # Track the newest published action and release binary (no version pin),
-      # so the example always reflects current behaviour — including transitive
-      # dependency anchoring (link-transitive, default true). @main runs the
-      # latest action.yml; version: latest downloads the latest release binary.
-      - name: Anchor MDVM SARIF to Dockerfile (latest released action)
+      # Consume the action from this checkout (uses: ./). Because this is a
+      # non-tag ref, the action builds its binary from the source at this exact
+      # commit, so the example always exercises current behaviour — including
+      # transitive dependency anchoring (link-transitive, default true). External
+      # consumers pin @main (build from source) or a vX.Y.Z tag (prebuilt binary).
+      - name: Anchor MDVM SARIF to Dockerfile (built from source)
         id: anchor
-        uses: fuj1g0n/sarif-dockerfile-anchor@main
+        uses: ./
         with:
           sarif: image.sarif
           sbom: sbom.cyclonedx.json
           dockerfile: ${{ env.DOCKERFILE }}
           output: image.enriched.sarif
-          version: latest
 
       - name: Verify enriched SARIF
         run: |

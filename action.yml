@@ -38,15 +38,8 @@ inputs:
     description: "Path to write the enriched SARIF (must be a file so it can be uploaded)."
     required: false
     default: "enriched.sarif"
-  version:
-    description: >-
-      Release tag of the binary to download. Defaults to the tag the action is
-      pinned at (GITHUB_ACTION_REF); set 'latest' or an explicit vX.Y.Z to
-      override.
-    required: false
-    default: ""
   github-token:
-    description: "Token used to resolve the latest release and download release assets."
+    description: "Token used to download release assets when pinned to a release tag."
     required: false
     default: ${{ github.token }}
 
@@ -58,30 +51,59 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - id: run
+    # Decide how to obtain the binary from the ref the action is pinned at.
+    # An exact release tag (vX.Y.Z) downloads the matching prebuilt asset; any
+    # other ref (a branch, a SHA, @main, or a local ./ checkout) builds the
+    # action source at that exact commit, so behaviour is tied to the pinned
+    # commit and no `version` input is needed.
+    - id: resolve
+      shell: bash
+      run: |
+        set -euo pipefail
+        REF="${GITHUB_ACTION_REF:-}"
+        if printf '%s' "${REF}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+          MODE=download
+        else
+          MODE=build
+        fi
+        echo "mode=${MODE}" >> "${GITHUB_OUTPUT}"
+        echo "anchor: mode=${MODE} (action ref: ${REF:-local})"
+
+    # --- build path: any non-release-tag ref ----------------------------------
+    # Build the binary with the same devbox-pinned Go toolchain that CI uses,
+    # from the action source checked out at this ref. Caching is disabled: the
+    # action source lives outside GITHUB_WORKSPACE for `uses: owner/repo@ref`,
+    # and the action's hashFiles(devbox.lock) cache key cannot hash files there.
+    - if: steps.resolve.outputs.mode == 'build'
+      uses: jetify-com/devbox-install-action@v0.15.0
+      with:
+        project-path: ${{ github.action_path }}
+        enable-cache: "false"
+
+    - id: build
+      if: steps.resolve.outputs.mode == 'build'
+      shell: bash
+      run: |
+        set -euo pipefail
+        BIN="${RUNNER_TEMP}/sarif-dockerfile-anchor"
+        if [ "${RUNNER_OS}" = "Windows" ]; then BIN="${BIN}.exe"; fi
+        echo "Building sarif-dockerfile-anchor from ${{ github.action_path }} (ref ${GITHUB_ACTION_REF:-local})"
+        ( cd "${{ github.action_path }}" && devbox run -- go build -o "${BIN}" ./cmd/sarif-dockerfile-anchor )
+        echo "bin=${BIN}" >> "${GITHUB_OUTPUT}"
+
+    # --- download path: exact release tags ------------------------------------
+    - id: download
+      if: steps.resolve.outputs.mode == 'download'
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github-token }}
       run: |
         set -euo pipefail
         REPO="fuj1g0n/sarif-dockerfile-anchor"
-
-        # --- resolve the release tag ---------------------------------------
-        # Default to the tag the action is pinned at (e.g. @v0.2.0). Fall back
-        # to the latest release when pinned to a branch/SHA or asked explicitly.
-        VERSION="${{ inputs.version }}"
-        if [ -z "${VERSION}" ]; then VERSION="${GITHUB_ACTION_REF:-}"; fi
-        if [ "${VERSION}" = "latest" ] || ! printf '%s' "${VERSION}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
-          LATEST="$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" "https://api.github.com/repos/${REPO}/releases/latest")"
-          VERSION="$(printf '%s' "${LATEST}" | grep -m1 '"tag_name"' | cut -d'"' -f4)"
-        fi
-        if [ -z "${VERSION}" ]; then
-          echo "::error::could not resolve a release version for ${REPO}"; exit 1
-        fi
-        echo "resolved version: ${VERSION} (action ref: ${GITHUB_ACTION_REF:-none})"
+        VERSION="${GITHUB_ACTION_REF}"
         NUM="${VERSION#v}"
 
-        # --- map runner OS/arch to GoReleaser asset names ------------------
+        # --- map runner OS/arch to GoReleaser asset names ---
         case "${RUNNER_OS}" in
           Linux)   OS=linux ;;
           macOS)   OS=darwin ;;
@@ -104,8 +126,18 @@ runs:
         curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" -o "${TMP}/${ASSET}" "${URL}"
         if [ "${EXT}" = "zip" ]; then unzip -q "${TMP}/${ASSET}" -d "${TMP}";
         else tar -xzf "${TMP}/${ASSET}" -C "${TMP}"; fi
+        echo "bin=${TMP}/${BIN}" >> "${GITHUB_OUTPUT}"
 
-        # --- run ------------------------------------------------------------
+    # --- run ------------------------------------------------------------------
+    - id: run
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Exactly one of build/download ran; the skipped step's output is empty,
+        # so the concatenation yields the single binary path.
+        BIN="${{ steps.build.outputs.bin }}${{ steps.download.outputs.bin }}"
+        if [ -z "${BIN}" ]; then echo "::error::no anchor binary was produced"; exit 1; fi
+
         ARGS=(
           --sarif         "${{ inputs.sarif }}"
           --sbom          "${{ inputs.sbom }}"
@@ -117,5 +149,5 @@ runs:
         DFURI="${{ inputs.dockerfile-uri }}"
         if [ -n "${DFURI}" ]; then ARGS+=(--dockerfile-uri "${DFURI}"); fi
 
-        "${TMP}/${BIN}" "${ARGS[@]}"
+        "${BIN}" "${ARGS[@]}"
         echo "sarif=${{ inputs.output }}" >> "${GITHUB_OUTPUT}"
