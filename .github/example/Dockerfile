@@ -1,7 +1,5 @@
-# Example fixture: a deliberately vulnerable image so the Defender CLI scan
-# returns OS-package findings the action can anchor. The injected `curl` install
-# line is what base/injected anchoring is verified against.
-FROM ubuntu:22.04
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
-    && rm -rf /var/lib/apt/lists/*
+# Example fixture: a clean, up-to-date base image. With no extra packages and
+# the latest LTS, the Defender CLI scan should report few or no OS-package
+# findings. A follow-up PR can introduce vulnerabilities to demonstrate the
+# anchored annotations on the Dockerfile.
+FROM ubuntu:24.04
