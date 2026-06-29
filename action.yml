@@ -23,6 +23,13 @@ inputs:
     description: "Comma-separated severities of base-image OS findings kept as inline annotations."
     required: false
     default: "high,critical"
+  link-transitive:
+    description: >-
+      Anchor transitive OS dependencies to the install line of the nearest
+      package that pulled them in (via the SBOM dependency graph). When false,
+      such findings fall back to the base FROM line.
+    required: false
+    default: "true"
   dockerfile-uri:
     description: "Repo-relative URI written into the SARIF artifactLocation (default: value of dockerfile)."
     required: false
@@ -105,6 +112,7 @@ runs:
           --dockerfile    "${{ inputs.dockerfile }}"
           --base-severity "${{ inputs.base-severity }}"
           --output        "${{ inputs.output }}"
+          "--link-transitive=${{ inputs.link-transitive }}"
         )
         DFURI="${{ inputs.dockerfile-uri }}"
         if [ -n "${DFURI}" ]; then ARGS+=(--dockerfile-uri "${DFURI}"); fi

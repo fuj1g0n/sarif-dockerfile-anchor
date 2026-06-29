@@ -34,13 +34,19 @@ type Config struct {
 	// BaseSeverities is the set (uppercased) of severities for which base-image
 	// OS findings are kept as inline annotations. Empty means "keep all".
 	BaseSeverities map[string]bool
+	// LinkTransitive enables dependency-graph attribution: an OS finding that is
+	// not named on any Dockerfile line is anchored to the install line of the
+	// nearest package (per the SBOM dependency graph) that pulled it in, instead
+	// of falling back to the base FROM line.
+	LinkTransitive bool
 }
 
 // Result reports how many findings landed in each bucket.
 type Result struct {
-	Injected int // anchored to a Dockerfile install/download line
-	Base     int // anchored to the base-image FROM line
-	Left     int // left at the image reference (application/filtered/unparseable)
+	Injected   int // anchored to a Dockerfile install/download line
+	Transitive int // anchored to an install line via the dependency graph
+	Base       int // anchored to the base-image FROM line
+	Left       int // left at the image reference (application/filtered/unparseable)
 }
 
 // ParseSeverities turns a comma-separated list like "high,critical" into an
@@ -78,6 +84,8 @@ func (r *Result) add(bucket string) {
 	switch bucket {
 	case "injected":
 		r.Injected++
+	case "transitive":
+		r.Transitive++
 	case "base":
 		r.Base++
 	default:
@@ -113,7 +121,19 @@ func anchorOne(item any, eco *cyclonedx.Index, df *dockerfile.Dockerfile, cfg Co
 	var bucket string
 	if ln, found := df.InstallLine(name); found {
 		lineNo, bucket = ln, "injected"
-	} else {
+	} else if cfg.LinkTransitive {
+		// Not named on any line: try to attribute the package to the install line
+		// of the nearest package (per the SBOM dependency graph) that pulled it in.
+		if anc, ok := eco.NearestInstalledAncestor(name, func(n string) bool {
+			_, f := df.InstallLine(n)
+			return f
+		}); ok {
+			if ln, f := df.InstallLine(anc); f {
+				lineNo, bucket = ln, "transitive"
+			}
+		}
+	}
+	if bucket == "" {
 		// Base-image OS package: anchor to the final-stage FROM line, but keep
 		// only the configured severities as inline annotations to limit noise.
 		if len(cfg.BaseSeverities) > 0 && !cfg.BaseSeverities[severity] {

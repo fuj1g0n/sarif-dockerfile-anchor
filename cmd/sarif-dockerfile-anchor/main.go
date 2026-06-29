@@ -24,13 +24,14 @@ import (
 // cli is the kong command-line grammar. Each exported field is a flag; the
 // flag name is derived from the field name (kebab-case) unless overridden.
 type cli struct {
-	Sarif         string `help:"Path to the Defender CLI image-scan SARIF (required)." placeholder:"FILE"`
-	Sbom          string `help:"Path to the CycloneDX SBOM JSON (required)." placeholder:"FILE"`
-	Dockerfile    string `help:"Path to the Dockerfile to anchor findings to (required)." placeholder:"FILE"`
-	BaseSeverity  string `help:"Comma-separated severities of base-image OS findings kept inline." default:"high,critical"`
-	DockerfileURI string `name:"dockerfile-uri" help:"Repo-relative URI written into the SARIF (default: value of --dockerfile)." placeholder:"PATH"`
-	Output        string `short:"o" help:"Write the enriched SARIF here (default: stdout)." placeholder:"FILE"`
-	Version       bool   `help:"Print version and exit."`
+	Sarif          string `help:"Path to the Defender CLI image-scan SARIF (required)." placeholder:"FILE"`
+	Sbom           string `help:"Path to the CycloneDX SBOM JSON (required)." placeholder:"FILE"`
+	Dockerfile     string `help:"Path to the Dockerfile to anchor findings to (required)." placeholder:"FILE"`
+	BaseSeverity   string `help:"Comma-separated severities of base-image OS findings kept inline." default:"high,critical"`
+	LinkTransitive bool   `name:"link-transitive" help:"Anchor transitive OS dependencies to the install line of the nearest package that pulled them in (via the SBOM dependency graph); falls back to the base FROM line." default:"true"`
+	DockerfileURI  string `name:"dockerfile-uri" help:"Repo-relative URI written into the SARIF (default: value of --dockerfile)." placeholder:"PATH"`
+	Output         string `short:"o" help:"Write the enriched SARIF here (default: stdout)." placeholder:"FILE"`
+	Version        bool   `help:"Print version and exit."`
 }
 
 func main() {
@@ -114,6 +115,7 @@ func run(args []string) int {
 		DockerfileURI:  uri,
 		BaseFromLine:   df.FinalStageFromLine(),
 		BaseSeverities: anchor.ParseSeverities(c.BaseSeverity),
+		LinkTransitive: c.LinkTransitive,
 	}
 
 	res := anchor.Enrich(doc, eco, df, cfg)
@@ -133,7 +135,7 @@ func run(args []string) int {
 		return 1
 	}
 
-	fmt.Fprintf(os.Stderr, "anchor: injected=%d base(FROM)=%d left-at-image=%d\n",
-		res.Injected, res.Base, res.Left)
+	fmt.Fprintf(os.Stderr, "anchor: injected=%d transitive=%d base(FROM)=%d left-at-image=%d\n",
+		res.Injected, res.Transitive, res.Base, res.Left)
 	return 0
 }
