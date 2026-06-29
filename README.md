@@ -81,22 +81,34 @@ The [Defender for Cloud CLI][dcli] produces these files (verified with CLI
 v2.0.3334.114):
 
 ```sh
-# Image scan: writes its scan SARIF to --defender-output (default: defender.sarif
-# in the working directory). Give it an explicit name so the SBOM scan below
-# cannot overwrite it.
-defender scan image "$IMAGE" --defender-output image.sarif
+# Export the locally-built image to a docker-archive tar first. The Defender
+# CLI resolver only accepts a local artifact (OCI layout dir / tar) or a
+# pullable registry reference; a bare local-daemon tag logs
+# "pkg/resolver : No suitable resolver found". A tar resolves cleanly.
+docker save "$IMAGE" -o image.tar
 
-# SBOM scan: --output names the CycloneDX file (default sbom-finding-<timestamp>.json,
-# timestamp YYYYMMDD-HHMMSS; --sbom-format default cyclonedx1.6-json).
-defender scan sbom "$IMAGE" --output sbom.cyclonedx.json
+# Image scan (--scanner mdvm): vulnerability findings from Microsoft Defender
+# Vulnerability Management. --defender-output names its scan SARIF (default:
+# defender.sarif in the working directory).
+defender scan image image.tar --scanner mdvm     --defender-output image.sarif
+
+# SBOM scan (--scanner mdvmsbom): --defender-output names its scan SARIF, which
+# reports malicious packages (same default defender.sarif). --output names the
+# CycloneDX SBOM file with OS/app purls used for classification (default
+# sbom-finding-<timestamp>.json; --sbom-format default cyclonedx1.6-json).
+defender scan sbom  image.tar --scanner mdvmsbom --defender-output sbom.sarif --output sbom.cyclonedx.json
 ```
 
 > [!IMPORTANT]
 > `defender scan image` and `defender scan sbom` BOTH default their scan SARIF to
 > `defender.sarif` in the working directory (the `--defender-output` default). Run
-> in the same directory without distinct names, the SBOM scan (which reports
-> malicious packages — usually none) overwrites the image scan's SARIF with an
-> empty one. Always give the image scan an explicit `--defender-output`.
+> in the same directory without distinct names, they overwrite each other — the
+> SBOM scan (which reports malicious packages, usually none) would clobber the
+> image scan's vulnerabilities with an empty SARIF. Give each scan a distinct
+> `--defender-output` (`image.sarif` / `sbom.sarif`) and pin the scanner
+> explicitly — `--scanner mdvm` for the image scan (vulnerabilities) and
+> `--scanner mdvmsbom` for the SBOM scan — so the SARIF content stays
+> deterministic regardless of CLI default changes or invocation order.
 
 > [!NOTE]
 > The exported image SARIF holds Critical/High/Medium findings; Low-severity
@@ -110,10 +122,15 @@ defender scan sbom "$IMAGE" --output sbom.cyclonedx.json
 ```yaml
 - name: Defender for Cloud image scan + SBOM
   run: |
-    # Give the image scan a distinct --defender-output; the SBOM scan's own scan
-    # SARIF also defaults to defender.sarif and would otherwise overwrite it.
-    ./defender scan image "$IMAGE" --defender-output image.sarif
-    ./defender scan sbom  "$IMAGE" --output sbom.cyclonedx.json
+    # Scan a docker-archive tar (docker save), not the bare local-daemon tag:
+    # the resolver only accepts a local artifact (tar / OCI dir) or a pullable
+    # registry ref, so a bare tag logs "No suitable resolver found".
+    # Pin the scanner explicitly and give each scan a distinct --defender-output;
+    # both scan SARIFs default to defender.sarif and would otherwise overwrite
+    # each other regardless of order.
+    docker save "$IMAGE" -o image.tar
+    ./defender scan image image.tar --scanner mdvm     --defender-output image.sarif
+    ./defender scan sbom  image.tar --scanner mdvmsbom --defender-output sbom.sarif --output sbom.cyclonedx.json
 
 - name: Anchor MDVM SARIF to Dockerfile
   id: anchor
