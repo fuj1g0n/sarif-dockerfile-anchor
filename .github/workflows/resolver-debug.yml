@@ -1,0 +1,93 @@
+name: resolver-debug
+
+# Verification workflow (temporary): determine which way of presenting a
+# locally-built image to the Defender CLI avoids the
+#   "pkg/resolver : No suitable resolver found for input ... InputType:image"
+# log on a Docker (moby) based runner.
+#
+# It scans the same image three ways and reports, per variant, whether the
+# resolver error appears:
+#   A) bare local-daemon tag        (current example.yml behaviour)
+#   B) docker-archive tar file      (docker save -> *.tar)
+#   C) OCI layout directory         (buildx OCI export -> extracted dir)
+#
+# Requires repository secrets:
+#   DEFENDER_TENANT_ID / DEFENDER_CLIENT_ID / DEFENDER_CLIENT_SECRET
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/resolver-debug.yml"
+      - ".github/example/**"
+
+permissions:
+  contents: read
+
+jobs:
+  resolver-debug:
+    runs-on: ubuntu-latest
+    env:
+      IMAGE: example-anchor:test
+      DOCKERFILE: .github/example/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Print container engine
+        run: |
+          echo "docker version:"; docker version --format '{{.Server.Version}}' || true
+          echo "docker info (storage):"; docker info --format '{{.Driver}}' || true
+
+      - name: Build the test image (local daemon tag)
+        run: docker build -f "$DOCKERFILE" -t "$IMAGE" .github/example
+
+      - name: Download Defender for Cloud CLI
+        run: curl -L -o defender "https://aka.ms/defender-cli_linux-x64" && chmod +x defender
+
+      - name: Resolver behaviour matrix
+        env:
+          DEFENDER_TENANT_ID: ${{ secrets.DEFENDER_TENANT_ID }}
+          DEFENDER_CLIENT_ID: ${{ secrets.DEFENDER_CLIENT_ID }}
+          DEFENDER_CLIENT_SECRET: ${{ secrets.DEFENDER_CLIENT_SECRET }}
+        run: |
+          set -uo pipefail
+          declare -A RESULT
+
+          run_variant () {
+            local label="$1" target="$2"
+            echo "::group::variant=$label target=$target"
+            ./defender scan image "$target" --scanner mdvm \
+              --defender-output "out-$label.sarif" --defender-debug \
+              > "log-$label.txt" 2>&1 || true
+            sed -E 's/\x1b\[[0-9;]*m//g; s/\r//g' "log-$label.txt" \
+              | grep -E 'Resolving image|Using direct path|No suitable resolver|Image resolved|Assessment completed|pkg/resolver|InputType:image|\| mdvm|\| TOTAL' \
+              | sed -E 's/[[:space:]]+/ /g' | sort -u | head -30 || true
+            if grep -q 'No suitable resolver found' "log-$label.txt"; then
+              RESULT[$label]="RESOLVER_ERROR"
+            else
+              RESULT[$label]="clean"
+            fi
+            echo "::endgroup::"
+          }
+
+          # A) bare local-daemon tag (current example.yml behaviour)
+          run_variant "bare-tag" "$IMAGE"
+
+          # B) docker-archive tar file (docker save)
+          docker save "$IMAGE" -o image.tar
+          run_variant "docker-archive-tar" "image.tar"
+
+          # C) OCI layout directory (buildx OCI export, then extract)
+          if docker buildx create --use --name ocibuilder >/dev/null 2>&1 \
+             && docker buildx build -f "$DOCKERFILE" --output type=oci,dest=image-oci.tar .github/example >/dev/null 2>&1; then
+            mkdir -p oci-dir && tar -xf image-oci.tar -C oci-dir
+            run_variant "oci-layout-dir" "oci-dir"
+          else
+            echo "skip oci-layout-dir (buildx OCI export unavailable)"
+            RESULT["oci-layout-dir"]="skipped"
+          fi
+
+          echo "================ RESOLVER MATRIX SUMMARY ================"
+          for k in bare-tag docker-archive-tar oci-layout-dir; do
+            printf '%-22s %s\n' "$k" "${RESULT[$k]:-?}"
+          done
+          echo "========================================================"
