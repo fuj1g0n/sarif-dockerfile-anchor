@@ -1,6 +1,6 @@
-name: example
+name: example-mdc
 
-# Example: scan a deliberately vulnerable image with the Defender for Cloud CLI,
+# example-mdc: scan a deliberately vulnerable image with the Defender for Cloud CLI,
 # anchor its SARIF to the Dockerfile via the action consumed as an external user
 # would (pinned @main, which builds the action from source at that commit), and
 # verify the enriched SARIF. The repo's own end-to-end test lives in
@@ -9,7 +9,7 @@ name: example
 on:
   pull_request:
     paths:
-      - ".github/workflows/example.yml"
+      - ".github/workflows/example-mdc.yml"
       - ".github/example/**"
 
 permissions:
@@ -18,7 +18,7 @@ permissions:
   pull-requests: write
 
 jobs:
-  example:
+  example-mdc:
     runs-on: ubuntu-latest
     env:
       IMAGE: example-anchor:test
