@@ -47,7 +47,7 @@ jobs:
 
       - name: Anchor MDVM SARIF to Dockerfile (released action)
         id: anchor
-        uses: fuj1g0n/sarif-dockerfile-anchor@v0.2.1
+        uses: fuj1g0n/sarif-dockerfile-anchor@v0.2.2
         with:
           sarif: image.sarif
           sbom: sbom.cyclonedx.json

@@ -65,13 +65,13 @@ runs:
         VERSION="${{ inputs.version }}"
         if [ -z "${VERSION}" ]; then VERSION="${GITHUB_ACTION_REF:-}"; fi
         if [ "${VERSION}" = "latest" ] || ! printf '%s' "${VERSION}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
-          VERSION="$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" \
-            "https://api.github.com/repos/${REPO}/releases/latest" \
-            | grep -m1 '"tag_name"' | cut -d'"' -f4)"
+          LATEST="$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" "https://api.github.com/repos/${REPO}/releases/latest")"
+          VERSION="$(printf '%s' "${LATEST}" | grep -m1 '"tag_name"' | cut -d'"' -f4)"
         fi
         if [ -z "${VERSION}" ]; then
           echo "::error::could not resolve a release version for ${REPO}"; exit 1
         fi
+        echo "resolved version: ${VERSION} (action ref: ${GITHUB_ACTION_REF:-none})"
         NUM="${VERSION#v}"
 
         # --- map runner OS/arch to GoReleaser asset names ------------------
