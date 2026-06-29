@@ -88,17 +88,47 @@ jobs:
       - name: Comment a link to this PR's code scanning results
         if: ${{ github.event.pull_request.number }}
         uses: actions/github-script@v7
+        env:
+          SARIF: ${{ steps.anchor.outputs.sarif }}
         with:
           script: |
+            const fs = require('fs');
             const pr = context.payload.pull_request.number;
             const { owner, repo } = context.repo;
             const url = `https://github.com/${owner}/${repo}/security/code-scanning?query=pr%3A${pr}+is%3Aopen`;
+            const sev = { critical: 0, high: 0, medium: 0, low: 0 };
+            let total = 0;
+            try {
+              const sarif = JSON.parse(fs.readFileSync(process.env.SARIF, 'utf8'));
+              for (const run of sarif.runs || []) {
+                const score = {};
+                for (const rule of run.tool?.driver?.rules || []) {
+                  const s = rule.properties?.['security-severity'];
+                  if (s !== undefined) score[rule.id] = Number(s);
+                }
+                for (const res of run.results || []) {
+                  total++;
+                  const s = score[res.ruleId];
+                  if (s >= 9.0) sev.critical++;
+                  else if (s >= 7.0) sev.high++;
+                  else if (s >= 4.0) sev.medium++;
+                  else if (s > 0.0) sev.low++;
+                  else if (res.level === 'error') sev.high++;
+                  else if (res.level === 'note') sev.low++;
+                  else sev.medium++;
+                }
+              }
+            } catch (e) {
+              core.warning(`Could not read SARIF for finding counts: ${e.message}`);
+            }
             const marker = '<!-- defender-mdvm-scan-results -->';
             const body = [
               marker,
               '## Defender (MDVM) code scanning results',
               '',
-              'The enriched SARIF for this pull request has been uploaded to GitHub code scanning.',
+              `**${total}** finding(s) were uploaded to GitHub code scanning for this pull request.`,
+              '',
+              `Severity breakdown \u2014 Critical: ${sev.critical}, High: ${sev.high}, Medium: ${sev.medium}, Low: ${sev.low}.`,
               '',
               `- **[View all code scanning alerts for this pull request](${url})**`,
               '',
