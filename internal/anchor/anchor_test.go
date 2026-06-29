@@ -68,6 +68,7 @@ func testConfig(df *dockerfile.Dockerfile) Config {
 		DockerfileURI:  "Dockerfile",
 		BaseFromLine:   df.FinalStageFromLine(),
 		BaseSeverities: ParseSeverities("high,critical"),
+		LinkTransitive: true,
 	}
 }
 
@@ -169,5 +170,68 @@ func TestEnrichTreatsAllOSTypesAsOS(t *testing.T) {
 	// maven stays at the image reference.
 	if res.Left != 1 {
 		t.Errorf("maven should be left at image, got left=%d", res.Left)
+	}
+}
+
+// transitiveDockerfile installs only curl on its single RUN line (line 2). The
+// SBOM below makes libssl3t64 a transitive dependency of curl that is not named
+// anywhere in the Dockerfile.
+const transitiveDockerfile = "FROM ubuntu:24.04\nRUN apt-get install -y --allow-downgrades curl=8.5.0-2ubuntu10"
+
+const transitiveSBOM = `{
+  "components": [
+    {"name":"curl",        "bom-ref":"r-curl", "purl":"pkg:deb/ubuntu/curl@8.5.0-2ubuntu10?arch=amd64"},
+    {"name":"libcurl4t64", "bom-ref":"r-lcurl","purl":"pkg:deb/ubuntu/libcurl4t64@8.5.0-2ubuntu10?arch=amd64"},
+    {"name":"libssl3t64",  "bom-ref":"r-ssl",  "purl":"pkg:deb/ubuntu/libssl3t64@3.0.13-0ubuntu3.9?arch=amd64"}
+  ],
+  "dependencies": [
+    {"ref":"r-curl",  "dependsOn":["r-lcurl"]},
+    {"ref":"r-lcurl", "dependsOn":["r-ssl"]}
+  ]
+}`
+
+func TestEnrichTransitiveAnchorsToInstaller(t *testing.T) {
+	df := dockerfile.Parse(transitiveDockerfile)
+	eco, err := cyclonedx.Parse([]byte(transitiveSBOM))
+	if err != nil {
+		t.Fatalf("parse sbom: %v", err)
+	}
+	// libssl3t64 is "Low": below the base-severity filter, so it would be
+	// dropped if it fell through to the base bucket. The transitive tier must
+	// anchor it to the curl install line regardless of severity.
+	doc := newDoc(newResult("CVE-SSL", "libssl3t64", "Low"))
+	res := Enrich(doc, eco, df, testConfig(df))
+
+	if res.Transitive != 1 || res.Injected != 0 || res.Base != 0 || res.Left != 0 {
+		t.Fatalf("buckets = injected:%d transitive:%d base:%d left:%d, want 0/1/0/0",
+			res.Injected, res.Transitive, res.Base, res.Left)
+	}
+	r := resultsOf(doc)[0].(map[string]any)
+	if got := region(r)["startLine"]; got != 2 {
+		t.Errorf("transitive startLine = %v, want 2 (curl install line)", got)
+	}
+	if got := uri(r); got != "Dockerfile" {
+		t.Errorf("transitive uri = %q, want Dockerfile", got)
+	}
+}
+
+func TestEnrichTransitiveDisabledFallsBackToBase(t *testing.T) {
+	df := dockerfile.Parse(transitiveDockerfile)
+	eco, err := cyclonedx.Parse([]byte(transitiveSBOM))
+	if err != nil {
+		t.Fatalf("parse sbom: %v", err)
+	}
+	cfg := testConfig(df)
+	cfg.LinkTransitive = false
+	cfg.BaseSeverities = ParseSeverities("") // keep all base findings
+	doc := newDoc(newResult("CVE-SSL", "libssl3t64", "High"))
+	res := Enrich(doc, eco, df, cfg)
+
+	if res.Base != 1 || res.Transitive != 0 {
+		t.Fatalf("with link-transitive off, want base=1 transitive=0, got base=%d transitive=%d",
+			res.Base, res.Transitive)
+	}
+	if got := region(resultsOf(doc)[0].(map[string]any))["startLine"]; got != 1 {
+		t.Errorf("base startLine = %v, want 1 (FROM line)", got)
 	}
 }

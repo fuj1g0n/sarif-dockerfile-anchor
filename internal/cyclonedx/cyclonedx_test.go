@@ -90,3 +90,57 @@ func TestIsOSAcrossPurlTypes(t *testing.T) {
 		}
 	}
 }
+
+// depGraphSBOM models curl -> libcurl4t64 -> libssl3t64, with zlib1g hanging
+// off curl as a sibling, so the reverse-graph walk has more than one path.
+const depGraphSBOM = `{
+  "components": [
+    {"name":"curl",        "bom-ref":"r-curl", "purl":"pkg:deb/ubuntu/curl@8.5.0?arch=amd64"},
+    {"name":"libcurl4t64", "bom-ref":"r-lcurl","purl":"pkg:deb/ubuntu/libcurl4t64@8.5.0?arch=amd64"},
+    {"name":"libssl3t64",  "bom-ref":"r-ssl",  "purl":"pkg:deb/ubuntu/libssl3t64@3.0.13?arch=amd64"},
+    {"name":"zlib1g",      "bom-ref":"r-zlib", "purl":"pkg:deb/ubuntu/zlib1g@1.3?arch=amd64"}
+  ],
+  "dependencies": [
+    {"ref":"r-curl",  "dependsOn":["r-lcurl","r-zlib"]},
+    {"ref":"r-lcurl", "dependsOn":["r-ssl"]}
+  ]
+}`
+
+func TestNearestInstalledAncestor(t *testing.T) {
+	idx, err := Parse([]byte(depGraphSBOM))
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	installed := func(names ...string) func(string) bool {
+		set := map[string]bool{}
+		for _, n := range names {
+			set[n] = true
+		}
+		return func(n string) bool { return set[n] }
+	}
+
+	// libssl3t64's only installed ancestor is curl (two hops up).
+	if anc, ok := idx.NearestInstalledAncestor("libssl3t64", installed("curl")); !ok || anc != "curl" {
+		t.Errorf("nearest ancestor of libssl3t64 = %q,%v, want curl,true", anc, ok)
+	}
+	// The nearer ancestor wins when both are installed.
+	if anc, ok := idx.NearestInstalledAncestor("libssl3t64", installed("curl", "libcurl4t64")); !ok || anc != "libcurl4t64" {
+		t.Errorf("nearest ancestor with both installed = %q,%v, want libcurl4t64,true", anc, ok)
+	}
+	// A root package has no ancestor.
+	if anc, ok := idx.NearestInstalledAncestor("curl", installed("curl")); ok {
+		t.Errorf("curl should have no installed ancestor, got %q", anc)
+	}
+	// No installed ancestor anywhere.
+	if _, ok := idx.NearestInstalledAncestor("libssl3t64", installed("zlib1g")); ok {
+		t.Error("zlib1g is not an ancestor of libssl3t64; expected no match")
+	}
+}
+
+func TestNearestInstalledAncestorEmptyGraph(t *testing.T) {
+	idx := NewIndex(map[string]map[string]struct{}{"libssl3t64": {"deb": {}}})
+	if _, ok := idx.NearestInstalledAncestor("libssl3t64", func(string) bool { return true }); ok {
+		t.Error("index without a dependency graph must report no ancestor")
+	}
+}
