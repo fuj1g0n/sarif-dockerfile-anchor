@@ -39,6 +39,8 @@ jobs:
         run: |
           ./defender scan image "$IMAGE" --defender-output image.sarif
           ./defender scan sbom  "$IMAGE" --output sbom.cyclonedx.json
+          test -s image.sarif && test -s sbom.cyclonedx.json \
+            || { echo "::error::Defender scan produced no SARIF/SBOM — check the DEFENDER_* token secrets are valid and unexpired"; exit 1; }
 
       - name: Anchor MDVM SARIF to Dockerfile (released action)
         id: anchor
