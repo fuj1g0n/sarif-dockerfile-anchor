@@ -35,13 +35,8 @@ jobs:
           DEFENDER_CLIENT_ID: ${{ secrets.DEFENDER_CLIENT_ID }}
           DEFENDER_CLIENT_SECRET: ${{ secrets.DEFENDER_CLIENT_SECRET }}
         run: |
-          # Retry to absorb transient GatewayTimeout from the scanner backend.
-          for i in 1 2 3; do
-            ./defender scan image "$IMAGE" --defender-output image.sarif \
-              && ./defender scan sbom "$IMAGE" --output sbom.cyclonedx.json \
-              && [ -s image.sarif ] && [ -s sbom.cyclonedx.json ] && break
-            echo "scan attempt $i produced no SARIF/SBOM, retrying…"; sleep 10
-          done
+          ./defender scan image "$IMAGE" --defender-output image.sarif
+          ./defender scan sbom  "$IMAGE" --output sbom.cyclonedx.json
           test -s image.sarif && test -s sbom.cyclonedx.json \
             || { echo "::error::Defender scan produced no SARIF/SBOM — check the DEFENDER_* token secrets are valid and unexpired"; exit 1; }
 
