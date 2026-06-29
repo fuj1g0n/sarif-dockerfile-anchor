@@ -35,6 +35,7 @@ jobs:
           DEFENDER_CLIENT_ID: ${{ secrets.DEFENDER_CLIENT_ID }}
           DEFENDER_CLIENT_SECRET: ${{ secrets.DEFENDER_CLIENT_SECRET }}
         run: |
+          echo "cred lengths: tenant=${#DEFENDER_TENANT_ID} client=${#DEFENDER_CLIENT_ID} secret=${#DEFENDER_CLIENT_SECRET}"
           # Retry to absorb transient GatewayTimeout from the scanner backend.
           for i in 1 2 3; do
             ./defender scan image "$IMAGE" --defender-output image.sarif \
