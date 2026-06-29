@@ -6,3 +6,5 @@ require (
 	github.com/alecthomas/kong v1.15.0
 	github.com/package-url/packageurl-go v0.1.6
 )
+
+require github.com/earthboundkid/versioninfo/v2 v2.24.1

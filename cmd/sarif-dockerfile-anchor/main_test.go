@@ -89,8 +89,21 @@ func TestRunUnknownFlag(t *testing.T) {
 }
 
 func TestRunVersion(t *testing.T) {
-	if code := run([]string{"--version"}); code != 0 {
-		t.Errorf("run --version = %d, want 0", code)
+	orig := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+	code := run([]string{"--version"})
+	_ = w.Close()
+	os.Stdout = orig
+	if code != 0 {
+		t.Fatalf("run --version = %d, want 0", code)
+	}
+	buf := make([]byte, 256)
+	if n, _ := r.Read(buf); n == 0 {
+		t.Error("--version printed nothing")
 	}
 }
 

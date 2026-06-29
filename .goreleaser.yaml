@@ -10,6 +10,8 @@ builds:
   - id: sarif-dockerfile-anchor
     main: ./cmd/sarif-dockerfile-anchor
     binary: sarif-dockerfile-anchor
+    # Stamp file mtimes with the commit time for reproducible builds.
+    mod_timestamp: "{{ .CommitTimestamp }}"
     env:
       - CGO_ENABLED=0
     goos:
@@ -20,7 +22,7 @@ builds:
       - amd64
       - arm64
     ldflags:
-      - -s -w -X main.version={{ .Version }}
+      - -s -w
 
 archives:
   - id: default
