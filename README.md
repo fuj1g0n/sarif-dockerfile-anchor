@@ -24,7 +24,8 @@ introduced the package.
 | Finding kind | Decided by | Anchored to |
 |---|---|---|
 | **Injected** OS package | name appears in the Dockerfile as a `<name>_…deb` filename or `<name>=` apt pin | the install/download line (any severity) |
-| **Base-image** OS package | OS package not present in the Dockerfile | the final-stage `FROM` line (kept only for `--base-severity`) |
+| **Transitive** OS package | not named in the Dockerfile, but in the SBOM dependency closure of an injected package | the nearest such install line (any severity; `--link-transitive`, default on) |
+| **Base-image** OS package | OS package not present in the Dockerfile (and no injected ancestor) | the final-stage `FROM` line (kept only for `--base-severity`) |
 | **Application / language** package | SBOM `purl` type is not an OS/distro type (e.g. `pkg:maven/…`, `pkg:npm/…`) | left at the image reference (Dependabot / CodeQL territory) |
 
 - OS vs application is decided from the CycloneDX SBOM `purl` **type**: the
@@ -35,6 +36,12 @@ introduced the package.
 - Base-image findings anchor to the Dockerfile's **final-stage `FROM`** (the last
   `FROM`), since the scanned image is always built from that stage — no base
   image needs to be supplied.
+- **Transitive** anchoring (`--link-transitive`, default on) walks the CycloneDX
+  `dependencies` graph: an OS finding not named in the Dockerfile is anchored to
+  the install line of the *nearest* package that pulled it in, instead of the
+  `FROM` line. A package in an installed package's dependency **closure** is thus
+  attributed to that install line — including shared base libraries it depends
+  on. Pass `--link-transitive=false` to keep the base-`FROM` behaviour.
 - A stable `partialFingerprints` (`sha1(ruleId + package)`) keeps alerts from
   churning across re-runs.
 
@@ -63,7 +70,7 @@ sarif-dockerfile-anchor \
   --sbom         sbom.cyclonedx.json \
   --dockerfile   Dockerfile \
   --output       image.enriched.sarif
-# summary (injected / base / left-at-image counts) is printed to stderr
+# summary (injected / transitive / base / left-at-image counts) is printed to stderr
 ```
 
 | Flag | Required | Default | Description |
@@ -72,6 +79,7 @@ sarif-dockerfile-anchor \
 | `--sbom` | yes | | CycloneDX SBOM JSON (OS/app classification via `purl`) |
 | `--dockerfile` | yes | | Dockerfile to anchor findings to |
 | `--base-severity` | no | `high,critical` | severities of base-image OS findings kept inline |
+| `--link-transitive` | no | `true` | anchor a transitive OS finding to the install line of the nearest package (per the SBOM dependency graph) that pulled it in; `false` keeps the base-`FROM` behaviour |
 | `--dockerfile-uri` | no | value of `--dockerfile` | repo-relative URI written into the SARIF; override **only** when the file read differs from its committed path (e.g. an absolute `--dockerfile`, or a generated/rendered Dockerfile) |
 | `--output` | no | stdout | where to write the enriched SARIF |
 
@@ -140,6 +148,8 @@ defender scan sbom  image.tar --scanner mdvmsbom --defender-output sbom.sarif --
     sbom: sbom.cyclonedx.json
     dockerfile: Dockerfile
     output: image.enriched.sarif
+    # link-transitive: true  # (default) anchor transitive OS deps to their
+    #                        # introducing install line; false keeps base-FROM
 
 - name: Upload to code scanning
   uses: github/codeql-action/upload-sarif@v3

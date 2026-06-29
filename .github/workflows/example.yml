@@ -48,14 +48,19 @@ jobs:
           test -s image.sarif && test -s sbom.cyclonedx.json \
             || { echo "::error::Defender scan produced no SARIF/SBOM — check the DEFENDER_* token secrets are valid and unexpired"; exit 1; }
 
-      - name: Anchor MDVM SARIF to Dockerfile (released action)
+      # Track the newest published action and release binary (no version pin),
+      # so the example always reflects current behaviour — including transitive
+      # dependency anchoring (link-transitive, default true). @main runs the
+      # latest action.yml; version: latest downloads the latest release binary.
+      - name: Anchor MDVM SARIF to Dockerfile (latest released action)
         id: anchor
-        uses: fuj1g0n/sarif-dockerfile-anchor@v0.2.3
+        uses: fuj1g0n/sarif-dockerfile-anchor@main
         with:
           sarif: image.sarif
           sbom: sbom.cyclonedx.json
           dockerfile: ${{ env.DOCKERFILE }}
           output: image.enriched.sarif
+          version: latest
 
       - name: Verify enriched SARIF
         run: |
