@@ -11,7 +11,6 @@ on:
 
 permissions:
   contents: read
-  security-events: write
 
 jobs:
   e2e-test:
@@ -70,8 +69,3 @@ jobs:
             '[.runs[].results[]? | select(.locations[]?.physicalLocation.artifactLocation.uri == $df)] | length' "$OUT")
           echo "results anchored to $DOCKERFILE: $ANCHORED"  # clean image may yield 0 findings
 
-      - name: Upload to code scanning
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: ${{ steps.anchor.outputs.sarif }}
-          category: defender-mdvm-e2e
