@@ -1,0 +1,68 @@
+name: e2e
+
+# End-to-end test: scan a deliberately vulnerable image with the Defender for
+# Cloud CLI, anchor its SARIF to the Dockerfile via the *released* action, and
+# verify the enriched SARIF. Requires repository secrets:
+#   DEFENDER_TENANT_ID / DEFENDER_CLIENT_ID / DEFENDER_CLIENT_SECRET
+on:
+  workflow_dispatch:
+    inputs:
+      action-version:
+        description: "Released action/binary version to test (e.g. v0.2.0 or latest)."
+        required: false
+        default: "v0.2.0"
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    env:
+      IMAGE: e2e-anchor:test
+      DOCKERFILE: .github/e2e/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the test image
+        run: docker build -f "$DOCKERFILE" -t "$IMAGE" .github/e2e
+
+      - name: Download Defender for Cloud CLI
+        run: curl -L -o defender "https://aka.ms/defender-cli_linux-x64" && chmod +x defender
+
+      - name: Defender image scan + SBOM
+        env:
+          DEFENDER_TENANT_ID: ${{ secrets.DEFENDER_TENANT_ID }}
+          DEFENDER_CLIENT_ID: ${{ secrets.DEFENDER_CLIENT_ID }}
+          DEFENDER_CLIENT_SECRET: ${{ secrets.DEFENDER_CLIENT_SECRET }}
+        run: |
+          ./defender scan image "$IMAGE" --defender-output image.sarif
+          ./defender scan sbom  "$IMAGE" --output sbom.cyclonedx.json
+
+      - name: Anchor MDVM SARIF to Dockerfile (released action)
+        id: anchor
+        uses: fuj1g0n/sarif-dockerfile-anchor@v0.2.0
+        with:
+          sarif: image.sarif
+          sbom: sbom.cyclonedx.json
+          dockerfile: ${{ env.DOCKERFILE }}
+          output: image.enriched.sarif
+          version: ${{ github.event.inputs.action-version }}
+
+      - name: Verify enriched SARIF
+        run: |
+          set -euo pipefail
+          OUT="${{ steps.anchor.outputs.sarif }}"
+          test -f "$OUT" || { echo "::error::enriched SARIF not produced"; exit 1; }
+          jq -e '.runs[0].results' "$OUT" >/dev/null
+          ANCHORED=$(jq --arg df "$DOCKERFILE" \
+            '[.runs[].results[]? | select(.locations[]?.physicalLocation.artifactLocation.uri == $df)] | length' "$OUT")
+          echo "results anchored to $DOCKERFILE: $ANCHORED"
+          [ "$ANCHORED" -ge 1 ] || { echo "::error::no findings anchored to the Dockerfile"; exit 1; }
+
+      - name: Upload to code scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ steps.anchor.outputs.sarif }}
+          category: defender-mdvm-e2e
