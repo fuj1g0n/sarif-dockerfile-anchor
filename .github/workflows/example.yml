@@ -15,6 +15,7 @@ on:
 permissions:
   contents: read
   security-events: write
+  pull-requests: write
 
 jobs:
   example:
@@ -78,3 +79,43 @@ jobs:
         with:
           sarif_file: ${{ steps.anchor.outputs.sarif }}
           category: defender-mdvm-example
+
+        # GitHub only posts the github-advanced-security onboarding comment
+        # (with a link to the PR's code scanning results) the first time a new
+        # code-scanning configuration is introduced. For an already-onboarded
+        # config like this one it never reappears, so post the same results-list
+        # link ourselves as a sticky comment.
+      - name: Comment a link to this PR's code scanning results
+        if: ${{ github.event.pull_request.number }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request.number;
+            const { owner, repo } = context.repo;
+            const url = `https://github.com/${owner}/${repo}/security/code-scanning?query=pr%3A${pr}+is%3Aopen`;
+            const marker = '<!-- defender-mdvm-scan-results -->';
+            const body = [
+              marker,
+              '## Defender (MDVM) code scanning results',
+              '',
+              'The enriched SARIF for this pull request has been uploaded to GitHub code scanning.',
+              '',
+              `- **[View all code scanning alerts for this pull request](${url})**`,
+              '',
+              'Individual alerts are also annotated inline on the **Files changed** tab.',
+            ].join('\n');
+            const { data: comments } = await github.rest.issues.listComments({
+              owner, repo, issue_number: pr, per_page: 100,
+            });
+            const existing = comments.find(
+              (c) => c.user.type === 'Bot' && c.body && c.body.includes(marker),
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner, repo, comment_id: existing.id, body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: pr, body,
+              });
+            }
