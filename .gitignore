@@ -8,5 +8,5 @@ coverage.txt
 coverage.out
 coverage.html
 
-# devbox
-.devbox/
+# nix
+.direnv/

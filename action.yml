@@ -78,15 +78,12 @@ runs:
         echo "anchor: mode=${MODE} (action ref: ${REF:-local})"
 
     # --- build path: any non-release-tag ref ----------------------------------
-    # Build the binary with the same devbox-pinned Go toolchain that CI uses,
-    # from the action source checked out at this ref. Caching is disabled: the
-    # action source lives outside GITHUB_WORKSPACE for `uses: owner/repo@ref`,
-    # and the action's hashFiles(devbox.lock) cache key cannot hash files there.
+    # Build the binary with the same Nix-pinned Go toolchain that CI uses, from
+    # the action source checked out at this ref. The dev shell is resolved from
+    # the flake at the action path, so the toolchain is pinned by flake.lock at
+    # this exact commit.
     - if: steps.resolve.outputs.mode == 'build'
-      uses: jetify-com/devbox-install-action@v0.15.0
-      with:
-        project-path: ${{ github.action_path }}
-        enable-cache: "false"
+      uses: DeterminateSystems/nix-installer-action@v22
 
     - id: build
       if: steps.resolve.outputs.mode == 'build'
@@ -96,7 +93,7 @@ runs:
         BIN="${RUNNER_TEMP}/sarif-dockerfile-anchor"
         if [ "${RUNNER_OS}" = "Windows" ]; then BIN="${BIN}.exe"; fi
         echo "Building sarif-dockerfile-anchor from ${{ github.action_path }} (ref ${{ steps.resolve.outputs.ref }})"
-        ( cd "${{ github.action_path }}" && devbox run -- go build -o "${BIN}" ./cmd/sarif-dockerfile-anchor )
+        ( cd "${{ github.action_path }}" && nix develop . -c go build -o "${BIN}" ./cmd/sarif-dockerfile-anchor )
         echo "bin=${BIN}" >> "${GITHUB_OUTPUT}"
 
     # --- download path: exact release tags ------------------------------------
