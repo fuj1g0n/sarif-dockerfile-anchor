@@ -161,18 +161,22 @@ defender scan sbom  image.tar --scanner mdvmsbom --defender-output sbom.sarif --
 When pinned to a release tag (`@vX.Y.Z`) the composite action downloads the
 matching prebuilt binary for the runner's OS/architecture. When pinned to any
 other ref (`@main`, a branch, or a SHA) it builds the binary from the action
-source at that exact commit, using the same devbox-pinned Go toolchain as CI, so
+source at that exact commit, using the same Nix-pinned Go toolchain as CI, so
 behaviour is tied to the pinned commit. No Python or other runtime is required.
 
 ## Development
 
-This repo uses [devbox](https://www.jetify.com/devbox) for a reproducible Go
-toolchain:
+This repo uses a [Nix flake](https://nix.dev/concepts/flakes.html) for a
+reproducible Go toolchain:
 
 ```sh
-devbox run -- go test ./...
-devbox run -- go build ./...
+nix develop            # enter a shell with go and golangci-lint
+nix develop -c make test
+nix develop -c make build
 ```
+
+See the [Makefile](Makefile) for the available targets (`test`, `build`,
+`vet`, `lint`, `fmt`, `cover`, `cover-html`).
 
 ## License
 

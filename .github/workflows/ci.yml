@@ -14,18 +14,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: jetify-com/devbox-install-action@v0.15.0
-        with:
-          enable-cache: "true"
+      - uses: DeterminateSystems/nix-installer-action@v22
 
       - name: Lint
-        run: devbox run lint
+        run: nix develop -c make lint
 
       - name: Check formatting
         run: |
-          devbox run fmt
+          nix develop -c make fmt
           if [ -n "$(git status --porcelain)" ]; then
-            echo "::error::code is not formatted; run 'devbox run fmt'"
+            echo "::error::code is not formatted; run 'nix develop -c make fmt'"
             git --no-pager diff
             exit 1
           fi
@@ -35,20 +33,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: jetify-com/devbox-install-action@v0.15.0
-        with:
-          enable-cache: "true"
+      - uses: DeterminateSystems/nix-installer-action@v22
 
       - name: Vet
-        run: devbox run vet
+        run: nix develop -c make vet
 
       - name: Test (race + coverage)
-        run: devbox run -- go test ./... -race -count=1 -covermode=atomic -coverprofile=coverage.out
+        run: nix develop -c go test ./... -race -count=1 -covermode=atomic -coverprofile=coverage.out
 
       - name: Enforce coverage threshold
         run: |
           threshold=80.0
-          total=$(devbox run -- go tool cover -func=coverage.out | awk '/^total:/ {sub(/%/,"",$3); print $3}')
+          total=$(nix develop -c go tool cover -func=coverage.out | awk '/^total:/ {sub(/%/,"",$3); print $3}')
           echo "total coverage: ${total}% (threshold ${threshold}%)"
           awk -v c="$total" -v t="$threshold" 'BEGIN { exit (c+0 >= t+0) ? 0 : 1 }' || {
             echo "::error::coverage ${total}% is below the ${threshold}% threshold"
@@ -56,7 +52,7 @@ jobs:
           }
 
       - name: Build
-        run: devbox run build
+        run: nix develop -c make build
 
       - name: Upload coverage profile
         uses: actions/upload-artifact@v4
