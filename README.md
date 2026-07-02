@@ -170,12 +170,12 @@ This repo uses a [Nix flake](https://nix.dev/concepts/flakes.html) for a
 reproducible Go toolchain:
 
 ```sh
-nix develop            # enter a shell with go and golangci-lint
-nix develop -c make test
-nix develop -c make build
+nix develop            # enter a shell with go, golangci-lint, and just
+nix develop -c just test
+nix develop -c just build
 ```
 
-See the [Makefile](Makefile) for the available targets (`test`, `build`,
+See the [justfile](justfile) for the available recipes (`test`, `build`,
 `vet`, `lint`, `fmt`, `cover`, `cover-html`).
 
 ## License

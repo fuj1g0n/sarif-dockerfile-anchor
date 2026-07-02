@@ -17,13 +17,13 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@v22
 
       - name: Lint
-        run: nix develop -c make lint
+        run: nix develop -c just lint
 
       - name: Check formatting
         run: |
-          nix develop -c make fmt
+          nix develop -c just fmt
           if [ -n "$(git status --porcelain)" ]; then
-            echo "::error::code is not formatted; run 'nix develop -c make fmt'"
+            echo "::error::code is not formatted; run 'nix develop -c just fmt'"
             git --no-pager diff
             exit 1
           fi
@@ -36,7 +36,7 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@v22
 
       - name: Vet
-        run: nix develop -c make vet
+        run: nix develop -c just vet
 
       - name: Test (race + coverage)
         run: nix develop -c go test ./... -race -count=1 -covermode=atomic -coverprofile=coverage.out
@@ -52,7 +52,7 @@ jobs:
           }
 
       - name: Build
-        run: nix develop -c make build
+        run: nix develop -c just build
 
       - name: Upload coverage profile
         uses: actions/upload-artifact@v4
